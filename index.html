@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>מכוון תפילין כהלכה | Tefillin Aligner</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;900&family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- MediaPipe Face Mesh & Camera Utils -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header Navbar -->
+    <header class="app-header">
+      <div class="logo-area">
+        <div class="logo-icon">🔳</div>
+        <div class="logo-text">
+          <h1>מכוון תפילין כהלכה</h1>
+          <span class="subtext">זיהוי קציצת תפילין + בדיקת אמצע ומקום שיער</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="langToggleBtn" class="btn btn-glass">English</button>
+        <button id="infoBtn" class="btn btn-glass icon-btn" title="הלכות תפילין">ℹ️</button>
+      </div>
+    </header>
+
+    <!-- Camera Viewport & Overlay -->
+    <main class="viewport-section">
+      <div class="video-container" id="videoContainer">
+        <video id="webcam" playsinline autoplay muted></video>
+        <canvas id="outputCanvas"></canvas>
+
+        <!-- Dynamic Status Banner -->
+        <div class="status-overlay" id="statusOverlay">
+          <div class="status-indicator-dot" id="statusDot"></div>
+          <span id="statusText">מפעיל מצלמה...</span>
+        </div>
+
+        <!-- Guidance Banner -->
+        <div class="guidance-card" id="guidanceCard">
+          <div class="direction-arrow" id="directionArrow">🔍</div>
+          <div class="guidance-details">
+            <h3 id="guidanceTitle">אנא הניחו את התפילין של ראש</h3>
+            <p id="guidanceSub">המערכת מזהה את קציצת התפילין (הקובייה השחורה) מעל המצח...</p>
+          </div>
+        </div>
+
+        <!-- Interactive Camera Controls Bar -->
+        <div class="camera-controls">
+          <button id="toggleMirrorBtn" class="control-pill" title="היפוך מראה">🪞 מראה</button>
+          <button id="toggleGuidesBtn" class="control-pill active" title="הצג/הסתר קווי עזר">🎯 קווי עזר</button>
+          
+          <div class="hairline-adjust-box">
+            <span class="adjust-label" id="lblAdjustHair">קו שיער:</span>
+            <button id="hairlineUpBtn" class="adjust-btn" title="העלה את קו השיער למעלה">▲</button>
+            <button id="hairlineDownBtn" class="adjust-btn" title="הורד את קו השיער למטה">▼</button>
+            <button id="hairlineResetBtn" class="adjust-btn reset" title="איפוס קו שיער לברירת מחדל">↺</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Real-time Verification Metrics Grid -->
+      <section class="metrics-grid">
+        <!-- Tefillin Detection State -->
+        <div class="metric-card" id="detectionCard">
+          <div class="metric-header">
+            <span class="metric-label" id="lblDetectTitle">זיהוי קציצת תפילין</span>
+            <span class="metric-value" id="detectValue">לא זוהו</span>
+          </div>
+          <span class="metric-status" id="detectStatus">יש לחבוש תפילין מול המצלמה</span>
+        </div>
+
+        <!-- Horizontal Alignment -->
+        <div class="metric-card" id="horizontalCard">
+          <div class="metric-header">
+            <span class="metric-label" id="lblHorizTitle">מרכוז ברוחב (אמצע העיניים)</span>
+            <span class="metric-value" id="horizValue">--</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="horizBar" style="width: 50%;"></div>
+            <div class="progress-center-line"></div>
+          </div>
+          <span class="metric-status" id="horizStatus">ממתין לזיהוי...</span>
+        </div>
+
+        <!-- Vertical Scalp Hairline Check -->
+        <div class="metric-card" id="verticalCard">
+          <div class="metric-header">
+            <span class="metric-label" id="lblVertTitle">מיקום בגובה (מקום שיער vs מצח)</span>
+            <span class="metric-value" id="vertValue">--</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="vertBar" style="width: 0%;"></div>
+            <div class="progress-danger-zone"></div>
+          </div>
+          <span class="metric-status" id="vertStatus">ממתין לזיהוי...</span>
+        </div>
+      </section>
+    </main>
+
+    <!-- Halachic Guide Drawer -->
+    <div class="modal-backdrop" id="infoModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="modalTitle">הלכות מקום הנחת תפילין של ראש</h2>
+          <button class="close-btn" id="closeModalBtn">&times;</button>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>תפילין כהלכה • זיהוי קציצת תפילין מדויק בזמן אמת</p>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
