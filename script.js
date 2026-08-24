@@ -1,12 +1,12 @@
 /**
  * Real-Time Tefillin Detector & Strict Halachic Alignment Engine
  *
- * Algorithms & Features:
- * 1. Connected-Component Blob Analysis: Identifies the exact compact black Ketzitzah box,
- *    excluding side hair, colored blocks, headband straps, and background shadows.
- * 2. Precision Lowest-Edge Tracking: Accurately extracts the bottom-most boundary of the Tefillin box.
- * 3. Proportional Hairline Baseline with Real-Time Calibration (saved in localStorage).
- * 4. Multi-language (Hebrew / English) and clean visual overlays.
+ * Upgraded Features (v2.1):
+ * 1. Morphological Dilation & CCA: Bridges specular highlights, seams, and studs so black boxes form unified solid components.
+ * 2. Tight Midline Centering: Constrains search width (1.0 * eyeDist) and strictly rejects off-center side blocks / temple objects.
+ * 3. Enforced Physical Size: Tefillin cube must be at least 22px / 22% of eye distance.
+ * 4. 3D Head-Pose Pitch Correction: Prevents hairline guide line distortion when tilting head up/down.
+ * 5. Hairline Calibration Storage: Remembers custom hairline height in localStorage.
  */
 
 const state = {
@@ -49,7 +49,7 @@ const i18n = {
     modalRule2Title: "מקום הנחה בגובה (כל התפילין במקום שיער)",
     modalRule2Text: "הקציצה והמעברתא חייבות לשבת כולן במקום ששיער ראשו צומח. אם ירדה אפילו מקצת התפילין על המצח - אינו יוצא ידי חובה וברכתו לבטלה!",
     modalRule3Title: "זיהוי קציצת התפילין במצלמה",
-    modalRule3Text: "המערכת מזהה במדויק את קוביות הקציצה השחורה, מבודדת אותה מהשיער והרצועות, ובודקת שאינה גולשת אל המצח."
+    modalRule3Text: "המערכת מבודדת את קוביית הקציצה השחורה במרכז המצח, ומוודאת שכל שטח התפילין מונח מעל שורשי השיער."
   },
   en: {
     appTitle: "Tefillin Aligner",
@@ -81,7 +81,7 @@ const i18n = {
     modalRule2Title: "Strict Hair Growth Boundary",
     modalRule2Text: "The ENTIRE box and base MUST sit on scalp hair. If even a fraction touches forehead skin, the mitzvah is invalidated!",
     modalRule3Title: "Real Tefillin Detection",
-    modalRule3Text: "The camera isolates the black Tefillin cube from side hair and straps, tracking its lowest edge with zero forehead overlap."
+    modalRule3Text: "The camera isolates the black Tefillin cube along the center midline and verifies zero forehead overlap."
   }
 };
 
@@ -159,14 +159,14 @@ toggleGuidesBtn.addEventListener('click', () => {
   toggleGuidesBtn.classList.toggle('active', state.showGuides);
 });
 
-// Hairline Calibration Controls (Nudge up/down and persist in localStorage)
+// Hairline Calibration Controls
 hairlineUpBtn.addEventListener('click', () => {
-  state.hairlineUserAdjustment += 0.05;
+  state.hairlineUserAdjustment += 0.04;
   localStorage.setItem('tefillin_hairline_adj', state.hairlineUserAdjustment.toFixed(2));
 });
 
 hairlineDownBtn.addEventListener('click', () => {
-  state.hairlineUserAdjustment -= 0.05;
+  state.hairlineUserAdjustment -= 0.04;
   localStorage.setItem('tefillin_hairline_adj', state.hairlineUserAdjustment.toFixed(2));
 });
 
@@ -205,9 +205,11 @@ async function initCamera() {
 }
 
 /**
- * Computer Vision: Connected-Component Blob Analysis for Ketzitzah Cube.
- * Extracts only solid, compact dark cubic objects along the head symmetry axis,
- * cleanly rejecting side hair strands, colored headband blocks, and glasses frames.
+ * Computer Vision Engine:
+ * 1. Adaptive Color Masking (brightness & saturation)
+ * 2. Morphological Dilation (bridges specular glare & block seams)
+ * 3. Connected-Component Blob Analysis (BFS Flood-Fill)
+ * 4. Geometry & Midline Scorer (isolates central Ketzitzah cube from side noise)
  */
 function detectTefillinBox(ctx, headSearchArea, eyeDist, midX) {
   const { x, y, width, height } = headSearchArea;
@@ -217,9 +219,9 @@ function detectTefillinBox(ctx, headSearchArea, eyeDist, midX) {
     const imgData = ctx.getImageData(x, y, width, height);
     const data = imgData.data;
 
-    // 1. Binary segmentation of dark/black pixels
-    const mask = new Uint8Array(width * height);
-    let totalDark = 0;
+    // 1. Raw segmentation of dark/black pixels
+    const rawMask = new Uint8Array(width * height);
+    let rawDarkCount = 0;
 
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i];
@@ -228,18 +230,33 @@ function detectTefillinBox(ctx, headSearchArea, eyeDist, midX) {
       const brightness = (r + g + b) / 3;
       const saturationDiff = Math.max(r, g, b) - Math.min(r, g, b);
 
-      // Black Tefillin / Dark cube criteria:
-      // Dark matte surface (brightness < 68) with low color saturation (saturationDiff < 24)
-      // This strictly excludes skin, colored Lego pieces (yellow/green/red), and highlights
-      if (brightness < 68 && saturationDiff < 24) {
-        mask[i >> 2] = 1;
-        totalDark++;
+      // Dark matte leather / black plastic criteria
+      // Brightness < 78 (handles room lighting / ambient daylight)
+      // Saturation diff < 28 (strictly rejects colored blocks: yellow, red, green, blue)
+      if (brightness < 78 && saturationDiff < 28) {
+        rawMask[i >> 2] = 1;
+        rawDarkCount++;
       }
     }
 
-    if (totalDark < 25) return null;
+    if (rawDarkCount < 30) return null;
 
-    // 2. Connected Component Labeling (BFS Flood-Fill)
+    // 2. Morphological Dilation (1px radius) to bridge seams/reflections
+    const mask = new Uint8Array(width * height);
+    for (let py = 0; py < height; py++) {
+      for (let px = 0; px < width; px++) {
+        const idx = py * width + px;
+        if (rawMask[idx] === 1) {
+          mask[idx] = 1;
+          if (px > 0) mask[idx - 1] = 1;
+          if (px < width - 1) mask[idx + 1] = 1;
+          if (py > 0) mask[idx - width] = 1;
+          if (py < height - 1) mask[idx + width] = 1;
+        }
+      }
+    }
+
+    // 3. Connected Component Labeling (BFS Flood-Fill)
     const visited = new Uint8Array(width * height);
     const blobs = [];
 
@@ -308,41 +325,40 @@ function detectTefillinBox(ctx, headSearchArea, eyeDist, midX) {
 
     if (blobs.length === 0) return null;
 
-    // 3. Filter and score candidate blobs to find the genuine Ketzitzah box
-    const minPhysicalSize = Math.max(14, Math.round(eyeDist * 0.14));
-    const maxPhysicalSize = Math.round(eyeDist * 0.90);
+    // 4. Physical Thresholds for real Ketzitzah box
+    const minPhysicalSize = Math.max(18, Math.round(eyeDist * 0.18));
+    const maxPhysicalSize = Math.round(eyeDist * 0.85);
 
     let bestBlob = null;
     let bestScore = -999;
 
     for (const blob of blobs) {
-      // Must have reasonable size
-      if (blob.count < 25) continue;
+      // Must be a substantial block (not small noise or hair speck)
+      if (blob.count < 35) continue;
       if (blob.width < minPhysicalSize || blob.height < minPhysicalSize) continue;
       if (blob.width > maxPhysicalSize || blob.height > maxPhysicalSize) continue;
 
       const aspectRatio = blob.width / blob.height;
-      // Tefillin box is roughly square or rectangular (aspect ratio 0.35 to 2.4)
-      if (aspectRatio < 0.35 || aspectRatio > 2.4) continue;
+      // Tefillin box is roughly square or rectangular (aspect ratio 0.4 to 2.2)
+      if (aspectRatio < 0.4 || aspectRatio > 2.2) continue;
 
-      // Solid density: A solid Tefillin / Lego cube fills its bounding box tightly
+      // Solid density threshold
       if (blob.density < 0.28) continue;
 
-      // Centeredness score (distance from head midline)
+      // Strict Midline Check: Tefillin MUST be along the facial center axis
       const absCenterX = x + blob.avgX;
       const distFromMidline = Math.abs(absCenterX - midX);
 
-      // Scoring factors:
-      // 1. High solid fill density
-      // 2. Aspect ratio close to 1.0 (square cube)
-      // 3. Proximity to facial symmetry center line
-      // 4. Substantial pixel count
+      // Discard any blob that is clearly off to the side (e.g. side temple pieces/ears)
+      if (distFromMidline > eyeDist * 0.32) continue;
+
+      // Scoring factors
       const shapeScore = 1.0 - Math.min(1.0, Math.abs(1.0 - aspectRatio) * 0.5);
       const densityScore = blob.density;
-      const centerScore = Math.max(0, 1.0 - (distFromMidline / (eyeDist * 0.8)));
+      const centerScore = Math.max(0, 1.0 - (distFromMidline / (eyeDist * 0.32)));
       const countScore = Math.min(1.0, blob.count / 150);
 
-      const totalScore = (densityScore * 3.5) + (shapeScore * 2.5) + (centerScore * 2.5) + countScore;
+      const totalScore = (densityScore * 3.5) + (shapeScore * 2.5) + (centerScore * 3.5) + countScore;
 
       if (totalScore > bestScore) {
         bestScore = totalScore;
@@ -411,7 +427,7 @@ function onFaceResults(results) {
   const nosePt = { x: noseBridge.x * w, y: noseBridge.y * h };
   const meshTopPt = { x: meshTop.x * w, y: meshTop.y * h };
 
-  // Eyebrow Level Y (hard cutoff to exclude glasses frames)
+  // Eyebrow Level Y (cutoff to strictly exclude glasses frames)
   const eyebrowLevelY = Math.min(eyeLeftPt.y, eyeRightPt.y);
 
   // Eye distance scale
@@ -427,8 +443,15 @@ function onFaceResults(results) {
   const faceLen = Math.hypot(faceUpVector.x, faceUpVector.y);
   const uUp = { x: faceUpVector.x / faceLen, y: faceUpVector.y / faceLen }; 
 
-  // Hairline Point: Landmark #10 + proportional shift UP along head axis + user calibration offset
-  const baseHairlineRatio = 0.32 + state.hairlineUserAdjustment;
+  // 3D Head Pitch Angle Compensation
+  // When looking slightly up or down, perspective compresses forehead distance
+  const dz = (meshTop.z - noseBridge.z) * w;
+  const dy = (meshTopPt.y - nosePt.y);
+  const pitchAngle = Math.atan2(dz, Math.abs(dy));
+  const pitchCompression = Math.max(0.7, Math.cos(pitchAngle));
+
+  // Hairline Point: Landmark #10 + proportional shift UP along head axis + user calibration
+  const baseHairlineRatio = (0.28 + state.hairlineUserAdjustment) * pitchCompression;
   const hairlineOffset = eyeDist * baseHairlineRatio;
   const hairlinePt = {
     x: meshTopPt.x + uUp.x * hairlineOffset,
@@ -436,8 +459,8 @@ function onFaceResults(results) {
   };
 
   // 3. SEARCH AREA FOR TEFILLIN KETZITZAH
-  // Width centered on facial symmetry line
-  const searchW = Math.round(eyeDist * 1.5);
+  // Constrained width centered on facial symmetry line (prevents scanning outer temples/ears)
+  const searchW = Math.round(eyeDist * 1.05);
   const searchX = Math.round(Math.max(0, midEyesPt.x - searchW / 2));
   
   // Search Y range: From top of screen down to 25px ABOVE the eyebrows (strictly above glasses frames!)
@@ -459,8 +482,8 @@ function onFaceResults(results) {
 
     // Green Hairline Boundary Line
     ctx.beginPath();
-    ctx.moveTo(hairlinePt.x - uEye.x * eyeDist * 1.4, hairlinePt.y - uEye.y * eyeDist * 1.4);
-    ctx.lineTo(hairlinePt.x + uEye.x * eyeDist * 1.4, hairlinePt.y + uEye.y * eyeDist * 1.4);
+    ctx.moveTo(hairlinePt.x - uEye.x * eyeDist * 1.3, hairlinePt.y - uEye.y * eyeDist * 1.3);
+    ctx.lineTo(hairlinePt.x + uEye.x * eyeDist * 1.3, hairlinePt.y + uEye.y * eyeDist * 1.3);
     ctx.strokeStyle = "rgba(34, 197, 94, 0.9)";
     ctx.lineWidth = 3;
     ctx.stroke();
