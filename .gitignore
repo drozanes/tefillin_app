@@ -7,3 +7,5 @@ Thumbs.db
 
 # Local Dev Test Harness
 test.html
+samples_data.js
+generate_samples.ps1
