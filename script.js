@@ -325,38 +325,39 @@ function detectTefillinBox(ctx, headSearchArea, eyeDist, midX) {
 
     if (blobs.length === 0) return null;
 
-    // 4. Physical Thresholds for real Ketzitzah box
-    const minPhysicalSize = Math.max(18, Math.round(eyeDist * 0.18));
-    const maxPhysicalSize = Math.round(eyeDist * 0.85);
+    // 4. Physical Thresholds for real Ketzitzah box (scales proportionally with face size)
+    const minPhysicalDim = Math.max(7, Math.round(eyeDist * 0.12));
+    const minPixelCount = Math.max(18, Math.round(eyeDist * eyeDist * 0.015));
+    const maxPhysicalSize = Math.round(eyeDist * 0.90);
 
     let bestBlob = null;
     let bestScore = -999;
 
     for (const blob of blobs) {
-      // Must be a substantial block (not small noise or hair speck)
-      if (blob.count < 35) continue;
-      if (blob.width < minPhysicalSize || blob.height < minPhysicalSize) continue;
+      // Must be a substantial block relative to face scale
+      if (blob.count < minPixelCount) continue;
+      if (blob.width < minPhysicalDim || blob.height < minPhysicalDim) continue;
       if (blob.width > maxPhysicalSize || blob.height > maxPhysicalSize) continue;
 
       const aspectRatio = blob.width / blob.height;
-      // Tefillin box is roughly square or rectangular (aspect ratio 0.4 to 2.2)
-      if (aspectRatio < 0.4 || aspectRatio > 2.2) continue;
+      // Tefillin box is roughly square or rectangular (aspect ratio 0.35 to 2.4)
+      if (aspectRatio < 0.35 || aspectRatio > 2.4) continue;
 
       // Solid density threshold
-      if (blob.density < 0.28) continue;
+      if (blob.density < 0.25) continue;
 
       // Strict Midline Check: Tefillin MUST be along the facial center axis
       const absCenterX = x + blob.avgX;
       const distFromMidline = Math.abs(absCenterX - midX);
 
       // Discard any blob that is clearly off to the side (e.g. side temple pieces/ears)
-      if (distFromMidline > eyeDist * 0.32) continue;
+      if (distFromMidline > eyeDist * 0.35) continue;
 
       // Scoring factors
       const shapeScore = 1.0 - Math.min(1.0, Math.abs(1.0 - aspectRatio) * 0.5);
       const densityScore = blob.density;
-      const centerScore = Math.max(0, 1.0 - (distFromMidline / (eyeDist * 0.32)));
-      const countScore = Math.min(1.0, blob.count / 150);
+      const centerScore = Math.max(0, 1.0 - (distFromMidline / (eyeDist * 0.35)));
+      const countScore = Math.min(1.0, blob.count / (eyeDist * eyeDist * 0.1));
 
       const totalScore = (densityScore * 3.5) + (shapeScore * 2.5) + (centerScore * 3.5) + countScore;
 
