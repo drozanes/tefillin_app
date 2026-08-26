@@ -183,8 +183,8 @@ const faceMesh = new FaceMesh({
 faceMesh.setOptions({
   maxNumFaces: 1,
   refineLandmarks: true,
-  minDetectionConfidence: 0.6,
-  minTrackingConfidence: 0.6
+  minDetectionConfidence: 0.35,
+  minTrackingConfidence: 0.35
 });
 
 faceMesh.onResults(onFaceResults);
@@ -231,17 +231,17 @@ function detectTefillinBox(ctx, headSearchArea, eyeDist, midX) {
       const saturationDiff = Math.max(r, g, b) - Math.min(r, g, b);
 
       // Dark matte leather / black plastic criteria
-      // Brightness < 78 (handles room lighting / ambient daylight)
-      // Saturation diff < 28 (strictly rejects colored blocks: yellow, red, green, blue)
-      if (brightness < 78 && saturationDiff < 28) {
+      // Brightness < 88 (handles room lighting / daylight highlights on leather)
+      // Saturation diff < 32 (strictly rejects colored blocks: yellow, red, green, blue)
+      if (brightness < 88 && saturationDiff < 32) {
         rawMask[i >> 2] = 1;
         rawDarkCount++;
       }
     }
 
-    if (rawDarkCount < 30) return null;
+    if (rawDarkCount < 15) return null;
 
-    // 2. Morphological Dilation (1px radius) to bridge seams/reflections
+    // 2. Morphological Dilation (2px radius) to bridge seams/specular reflections
     const mask = new Uint8Array(width * height);
     for (let py = 0; py < height; py++) {
       for (let px = 0; px < width; px++) {
@@ -252,6 +252,10 @@ function detectTefillinBox(ctx, headSearchArea, eyeDist, midX) {
           if (px < width - 1) mask[idx + 1] = 1;
           if (py > 0) mask[idx - width] = 1;
           if (py < height - 1) mask[idx + width] = 1;
+          if (px > 1) mask[idx - 2] = 1;
+          if (px < width - 2) mask[idx + 2] = 1;
+          if (py > 1) mask[idx - width * 2] = 1;
+          if (py < height - 2) mask[idx + width * 2] = 1;
         }
       }
     }
@@ -326,9 +330,9 @@ function detectTefillinBox(ctx, headSearchArea, eyeDist, midX) {
     if (blobs.length === 0) return null;
 
     // 4. Physical Thresholds for real Ketzitzah box (scales proportionally with face size)
-    const minPhysicalDim = Math.max(7, Math.round(eyeDist * 0.12));
-    const minPixelCount = Math.max(18, Math.round(eyeDist * eyeDist * 0.015));
-    const maxPhysicalSize = Math.round(eyeDist * 0.90);
+    const minPhysicalDim = Math.max(8, Math.round(eyeDist * 0.10));
+    const minPixelCount = Math.max(18, Math.round(eyeDist * eyeDist * 0.010));
+    const maxPhysicalSize = Math.round(eyeDist * 0.95);
 
     let bestBlob = null;
     let bestScore = -999;
@@ -340,24 +344,24 @@ function detectTefillinBox(ctx, headSearchArea, eyeDist, midX) {
       if (blob.width > maxPhysicalSize || blob.height > maxPhysicalSize) continue;
 
       const aspectRatio = blob.width / blob.height;
-      // Tefillin box is roughly square or rectangular (aspect ratio 0.35 to 2.4)
-      if (aspectRatio < 0.35 || aspectRatio > 2.4) continue;
+      // Tefillin box is roughly square or rectangular (aspect ratio 0.28 to 2.8)
+      if (aspectRatio < 0.28 || aspectRatio > 2.8) continue;
 
       // Solid density threshold
-      if (blob.density < 0.25) continue;
+      if (blob.density < 0.20) continue;
 
       // Strict Midline Check: Tefillin MUST be along the facial center axis
       const absCenterX = x + blob.avgX;
       const distFromMidline = Math.abs(absCenterX - midX);
 
       // Discard any blob that is clearly off to the side (e.g. side temple pieces/ears)
-      if (distFromMidline > eyeDist * 0.35) continue;
+      if (distFromMidline > eyeDist * 0.42) continue;
 
       // Scoring factors
       const shapeScore = 1.0 - Math.min(1.0, Math.abs(1.0 - aspectRatio) * 0.5);
       const densityScore = blob.density;
-      const centerScore = Math.max(0, 1.0 - (distFromMidline / (eyeDist * 0.35)));
-      const countScore = Math.min(1.0, blob.count / (eyeDist * eyeDist * 0.1));
+      const centerScore = Math.max(0, 1.0 - (distFromMidline / (eyeDist * 0.42)));
+      const countScore = Math.min(1.0, blob.count / (eyeDist * eyeDist * 0.08));
 
       const totalScore = (densityScore * 3.5) + (shapeScore * 2.5) + (centerScore * 3.5) + countScore;
 
@@ -452,7 +456,7 @@ function onFaceResults(results) {
   const pitchCompression = Math.max(0.7, Math.cos(pitchAngle));
 
   // Hairline Point: Landmark #10 + proportional shift UP along head axis + user calibration
-  const baseHairlineRatio = (0.28 + state.hairlineUserAdjustment) * pitchCompression;
+  const baseHairlineRatio = (0.26 + state.hairlineUserAdjustment) * pitchCompression;
   const hairlineOffset = eyeDist * baseHairlineRatio;
   const hairlinePt = {
     x: meshTopPt.x + uUp.x * hairlineOffset,
@@ -460,13 +464,12 @@ function onFaceResults(results) {
   };
 
   // 3. SEARCH AREA FOR TEFILLIN KETZITZAH
-  // Constrained width centered on facial symmetry line (prevents scanning outer temples/ears)
-  const searchW = Math.round(eyeDist * 1.05);
+  // Generously covers upper head and forehead down to eyebrows without clipping
+  const searchW = Math.round(eyeDist * 1.30);
   const searchX = Math.round(Math.max(0, midEyesPt.x - searchW / 2));
-  
-  // Search Y range: From top of screen down to 25px ABOVE the eyebrows (strictly above glasses frames!)
-  const searchY = Math.round(Math.max(0, hairlinePt.y - eyeDist * 2.4));
-  const searchH = Math.round(Math.max(25, (eyebrowLevelY - 25) - searchY));
+  const searchY = Math.round(Math.max(0, hairlinePt.y - eyeDist * 2.2));
+  const searchBottom = Math.min(h, Math.max(hairlinePt.y + eyeDist * 0.40, eyebrowLevelY - 5));
+  const searchH = Math.round(Math.max(35, searchBottom - searchY));
 
   const detectedTefillin = detectTefillinBox(ctx, { x: searchX, y: searchY, width: searchW, height: searchH }, eyeDist, midEyesPt.x);
 
@@ -526,10 +529,11 @@ function onFaceResults(results) {
     // Positive = Lowest edge is ABOVE hairline on scalp.
     // Negative = Lowest edge is BELOW hairline on forehead skin.
     const distAboveHairline = (lowestEdgeVector.x * uUp.x + lowestEdgeVector.y * uUp.y);
+    const foreheadTolerance = Math.max(5, Math.round(eyeDist * 0.04));
 
     // HALACHIC ZERO TOLERANCE:
     // Is the lowest edge of the Ketzitzah box above or at the hairline root?
-    const isEntirelyOnScalp = distAboveHairline >= -3;
+    const isEntirelyOnScalp = distAboveHairline >= -foreheadTolerance;
 
     // 1. Draw tight bounding box directly around the isolated Ketzitzah cube
     ctx.strokeStyle = isEntirelyOnScalp ? "#22c55e" : "#ef4444";
