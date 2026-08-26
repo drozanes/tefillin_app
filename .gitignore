@@ -10,4 +10,5 @@ test.html
 samples_data.js
 generate_samples.ps1
 run_batch_test.ps1
+diag.ps1
 samples/
