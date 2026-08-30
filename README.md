@@ -1,6 +1,6 @@
-# Tefillin Aligner | מכוון תפילין כהלכה 🔳✨
+# Tefillin Mirror | מראת תפילין כהלכה 🪞✨
 
-A real-time AI & Computer Vision web application designed to help Jewish users align their Head Tefillin (*Shel Rosh* / קציצה של ראש) with Halachic precision.
+**Tefillin Mirror** is a real-time AI & Computer Vision web application designed to help Jewish users align their Head Tefillin (*Shel Rosh* / קציצה של ראש) with Halachic precision.
 
 ---
 
@@ -16,12 +16,13 @@ A real-time AI & Computer Vision web application designed to help Jewish users a
 
 ## ✨ Features & Architecture
 
-- **Real-Time 3D Face Tracking:** Powered by MediaPipe Face Mesh (468 landmarks), invariant to head tilt and rotations.
-- **Connected-Component Blob Analysis:** Segments and isolates the solid black *Ketzitzah* cube from hair strands, colored test blocks, side straps (*Retzuot*), and glasses frames.
+- **Shared Computer Vision Engine (`tefillin_engine.js`):** Unified algorithm for 3D face geometry analysis, connected-component dark blob segmentation, glare bridging, and Halachic classification.
+- **Real-Time 3D Face Tracking:** Powered by MediaPipe Face Mesh, invariant to head pitch, tilt, and rotations.
 - **Precision Lowest-Edge Tracking:** Detects the exact bottom-most edge of the Tefillin box to enforce zero-tolerance forehead overlap.
-- **Interactive Hairline Calibration:** On-screen fine-tuning controls (`▲`, `▼`, `↺`) saved locally to match any individual's personal hair root boundary.
+- **Interactive Hairline Calibration:** On-screen fine-tuning controls (`▲`, `▼`, `↺`) saved locally in `localStorage` to match any individual's personal hairline.
 - **Bilingual Interface:** Full support for Hebrew (RTL) and English.
 - **Mirror Mode & Visual Guides:** Dynamic central symmetry line and hairline boundary indicators.
+- **Developer Test Studio (`test.html`):** Offline-ready static photo tester with real-time threshold tuning and automated bulk benchmarking.
 
 ---
 
@@ -33,16 +34,20 @@ Simply open `index.html` in any modern web browser with webcam access:
 # Optional: run with a local HTTP server
 python -m http.server 8000
 ```
-Then visit `http://localhost:8000`.
+Then visit `http://localhost:8000` (or open `index.html` directly).
 
 ---
 
-## 📁 Project Structure
+## 📁 Repository Structure
 
 ```
 tefillin_app/
-├── index.html       # Application UI & Video Viewport
-├── style.css        # Responsive Dark Glassmorphism Styles
-├── script.js        # MediaPipe Face Mesh & Computer Vision Engine
-└── README.md        # Documentation
+├── index.html            # Main production web camera app (Tefillin Mirror)
+├── script.js             # Production UI controller, camera feed & metric gauges
+├── style.css             # Responsive dark glassmorphism styling
+├── tefillin_engine.js    # Core standalone CV & Halachic alignment algorithm module
+├── test.html             # Developer test studio, photo inspector & bulk benchmark suite
+├── generate_samples.ps1  # Helper script to compile local sample images into Base64 for offline test.html
+├── .gitignore            # Git ignore rules (keeps private sample datasets local)
+└── README.md             # Project overview & documentation
 ```

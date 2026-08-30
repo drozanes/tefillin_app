@@ -20,7 +20,7 @@ const state = {
 
 const i18n = {
   he: {
-    appTitle: "מכוון תפילין כהלכה",
+    appTitle: "מראת תפילין כהלכה",
     subTitle: "זיהוי קציצת תפילין + בדיקת אמצע ומקום שיער",
     langBtn: "English",
     horizTitle: "מרכוז ברוחב (אמצע העיניים)",
@@ -52,7 +52,7 @@ const i18n = {
     modalRule3Text: "המערכת מבודדת את קוביית הקציצה השחורה במרכז המצח, ומוודאת שכל שטח התפילין מונח מעל שורשי השיער."
   },
   en: {
-    appTitle: "Tefillin Aligner",
+    appTitle: "Tefillin Mirror",
     subTitle: "Tefillin Box Detection & Halachic Alignment",
     langBtn: "עברית",
     horizTitle: "Horizontal Center (Between Eyes)",
