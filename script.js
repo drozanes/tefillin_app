@@ -20,7 +20,7 @@ const state = {
 
 const i18n = {
   he: {
-    appTitle: "מראת תפילין כהלכה",
+    appTitle: "מראת תפילין",
     subTitle: "זיהוי קציצת תפילין + בדיקת אמצע ומקום שיער",
     langBtn: "English",
     horizTitle: "מרכוז ברוחב (אמצע העיניים)",
