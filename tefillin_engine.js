@@ -127,13 +127,13 @@ const TefillinEngine = (function () {
   }
 
   /**
-   * 2. Segment Dark Tefillin Blobs (Connected-Component Analysis with Glare Bridging)
+   * 2. Segment Dark Tefillin Blobs (Edge-Aware Sobel Gradient, Boxiness & Spatial Midline Prior)
    */
   function detectTefillinBlob(ctx, searchArea, eyeDist, midX, options = {}) {
     const { x, y, width, height } = searchArea;
     if (width <= 8 || height <= 8) return null;
 
-    const brightnessThresh = options.brightnessThreshold || 88;
+    const baseBrightnessThresh = options.brightnessThreshold || 88;
     const saturationThresh = options.saturationThreshold || 32;
     const minSizePct = options.minSizePct || 0.14;
 
@@ -141,19 +141,54 @@ const TefillinEngine = (function () {
       const imgData = ctx.getImageData(x, y, width, height);
       const data = imgData.data;
 
+      // --- STEP 1: Grayscale & Sobel Edge Gradient Map ---
+      const gray = new Uint8Array(width * height);
+      let sumLuma = 0;
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        const lum = (r * 77 + g * 150 + b * 29) >> 8; // Fast perceptual grayscale
+        gray[p] = lum;
+        sumLuma += lum;
+      }
+      const avgRoiLuma = sumLuma / (width * height);
+
+      // Adaptive ambient lighting compensation
+      const effectiveBrightnessThresh = Math.min(
+        baseBrightnessThresh,
+        Math.max(48, Math.round(avgRoiLuma * 0.75))
+      );
+
+      // 3x3 Sobel Edge Magnitude
+      const edgeMag = new Uint8Array(width * height);
+      for (let py = 1; py < height - 1; py++) {
+        const rowOffset = py * width;
+        for (let px = 1; px < width - 1; px++) {
+          const idx = rowOffset + px;
+          const gx =
+            (-1 * gray[idx - width - 1] + 1 * gray[idx - width + 1]) +
+            (-2 * gray[idx - 1]         + 2 * gray[idx + 1]) +
+            (-1 * gray[idx + width - 1] + 1 * gray[idx + width + 1]);
+
+          const gy =
+            (-1 * gray[idx - width - 1] - 2 * gray[idx - width] - 1 * gray[idx - width + 1]) +
+            ( 1 * gray[idx + width - 1] + 2 * gray[idx + width] + 1 * gray[idx + width + 1]);
+
+          edgeMag[idx] = Math.min(255, (Math.abs(gx) + Math.abs(gy)) >> 2);
+        }
+      }
+
+      // --- STEP 2: Luma/Color Mask Generation ---
       const rawMask = new Uint8Array(width * height);
       let rawDarkCount = 0;
 
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
         const brightness = (r + g + b) / 3;
         const satDiff = Math.max(r, g, b) - Math.min(r, g, b);
 
-        // Core black criteria: dark & low color saturation (rejects skin & colored headbands)
-        if (brightness < brightnessThresh && satDiff < saturationThresh) {
-          rawMask[i >> 2] = 1;
+        // Core black criteria: dark & low saturation
+        if (brightness < effectiveBrightnessThresh && satDiff < saturationThresh) {
+          rawMask[p] = 1;
           rawDarkCount++;
         }
       }
@@ -162,26 +197,31 @@ const TefillinEngine = (function () {
         return { allBlobs: [], winner: null, maskData: rawMask, rawDarkCount };
       }
 
-      // 2px morphological dilation (bridges leather specular glints and block seams)
+      // --- STEP 3: Edge-Constrained Dilation (Bridging glints without bleeding into hair) ---
       const mask = new Uint8Array(width * height);
+      const edgeBarrier = 32; // Prevents dilation across sharp leather/hair boundaries
+
       for (let py = 0; py < height; py++) {
+        const rowOffset = py * width;
         for (let px = 0; px < width; px++) {
-          const idx = py * width + px;
+          const idx = rowOffset + px;
           if (rawMask[idx] === 1) {
             mask[idx] = 1;
-            if (px > 0) mask[idx - 1] = 1;
-            if (px < width - 1) mask[idx + 1] = 1;
-            if (py > 0) mask[idx - width] = 1;
-            if (py < height - 1) mask[idx + width] = 1;
-            if (px > 1) mask[idx - 2] = 1;
-            if (px < width - 2) mask[idx + 2] = 1;
-            if (py > 1) mask[idx - width * 2] = 1;
-            if (py < height - 2) mask[idx + width * 2] = 1;
+            // 1px Dilation with edge barrier
+            if (px > 0 && edgeMag[idx - 1] < edgeBarrier) mask[idx - 1] = 1;
+            if (px < width - 1 && edgeMag[idx + 1] < edgeBarrier) mask[idx + 1] = 1;
+            if (py > 0 && edgeMag[idx - width] < edgeBarrier) mask[idx - width] = 1;
+            if (py < height - 1 && edgeMag[idx + width] < edgeBarrier) mask[idx + width] = 1;
+            // 2px Dilation inside solid leather
+            if (px > 1 && edgeMag[idx - 2] < edgeBarrier) mask[idx - 2] = 1;
+            if (px < width - 2 && edgeMag[idx + 2] < edgeBarrier) mask[idx + 2] = 1;
+            if (py > 1 && edgeMag[idx - width * 2] < edgeBarrier) mask[idx - width * 2] = 1;
+            if (py < height - 2 && edgeMag[idx + width * 2] < edgeBarrier) mask[idx + width * 2] = 1;
           }
         }
       }
 
-      // BFS Connected-Component Clustering
+      // --- STEP 4: BFS Connected-Component Clustering with Edge Metrics ---
       const visited = new Uint8Array(width * height);
       const blobs = [];
 
@@ -192,6 +232,8 @@ const TefillinEngine = (function () {
             let count = 0;
             let minX = px, maxX = px, minY = py, maxY = py;
             let sumX = 0, sumY = 0;
+            let boundaryEdges = 0;
+            let perimeterCount = 0;
 
             const queue = [idx];
             visited[idx] = 1;
@@ -211,16 +253,43 @@ const TefillinEngine = (function () {
               if (cy < minY) minY = cy;
               if (cy > maxY) maxY = cy;
 
+              let isBoundary = false;
+
               // 4-connected neighbors
-              if (cy > 0) { const up = curr - width; if (mask[up] === 1 && !visited[up]) { visited[up] = 1; queue.push(up); } }
-              if (cy < height - 1) { const down = curr + width; if (mask[down] === 1 && !visited[down]) { visited[down] = 1; queue.push(down); } }
-              if (cx > 0) { const left = curr - 1; if (mask[left] === 1 && !visited[left]) { visited[left] = 1; queue.push(left); } }
-              if (cx < width - 1) { const right = curr + 1; if (mask[right] === 1 && !visited[right]) { visited[right] = 1; queue.push(right); } }
+              if (cy > 0) { 
+                const up = curr - width; 
+                if (mask[up] === 1 && !visited[up]) { visited[up] = 1; queue.push(up); }
+                else if (mask[up] === 0) isBoundary = true;
+              } else isBoundary = true;
+
+              if (cy < height - 1) { 
+                const down = curr + width; 
+                if (mask[down] === 1 && !visited[down]) { visited[down] = 1; queue.push(down); }
+                else if (mask[down] === 0) isBoundary = true;
+              } else isBoundary = true;
+
+              if (cx > 0) { 
+                const left = curr - 1; 
+                if (mask[left] === 1 && !visited[left]) { visited[left] = 1; queue.push(left); }
+                else if (mask[left] === 0) isBoundary = true;
+              } else isBoundary = true;
+
+              if (cx < width - 1) { 
+                const right = curr + 1; 
+                if (mask[right] === 1 && !visited[right]) { visited[right] = 1; queue.push(right); }
+                else if (mask[right] === 0) isBoundary = true;
+              } else isBoundary = true;
+
+              if (isBoundary) {
+                perimeterCount++;
+                boundaryEdges += edgeMag[curr];
+              }
             }
 
             const bW = maxX - minX + 1;
             const bH = maxY - minY + 1;
-            const density = count / (bW * bH);
+            const density = count / (bW * bH); // Boxiness / Rectangular Solidity
+            const avgBoundarySharpness = perimeterCount > 0 ? (boundaryEdges / perimeterCount) : 0;
 
             blobs.push({
               minX, maxX, minY, maxY,
@@ -229,12 +298,14 @@ const TefillinEngine = (function () {
               count,
               density,
               avgX: sumX / count,
-              avgY: sumY / count
+              avgY: sumY / count,
+              avgBoundarySharpness
             });
           }
         }
       }
 
+      // --- STEP 5: Geometric Filtering & Boxiness/Centering Scoring ---
       const minPhysicalDim = Math.max(8, Math.round(eyeDist * (minSizePct * 0.70)));
       const minPixelCount = Math.max(16, Math.round(eyeDist * eyeDist * 0.010));
       const maxPhysicalSize = Math.round(eyeDist * 0.95);
@@ -252,14 +323,22 @@ const TefillinEngine = (function () {
         else if (blob.width < minPhysicalDim || blob.height < minPhysicalDim) rejectReason = `מימד קטן (<${minPhysicalDim}px)`;
         else if (blob.width > maxPhysicalSize || blob.height > maxPhysicalSize) rejectReason = 'גדול מדי';
         else if (aspectRatio < 0.28 || aspectRatio > 2.8) rejectReason = `יחס חריג (${aspectRatio.toFixed(2)})`;
-        else if (blob.density < 0.20) rejectReason = `צפיפות נמוכה (${(blob.density * 100).toFixed(0)}%)`;
+        else if (blob.density < 0.22) rejectReason = `צפיפות נמוכה (${(blob.density * 100).toFixed(0)}%)`;
         else if (distFromMidline > eyeDist * 0.42) rejectReason = `רחוק מאמצע (${Math.round(distFromMidline)}px)`;
 
-        const shapeScore = 1.0 - Math.min(1.0, Math.abs(1.0 - aspectRatio) * 0.5);
-        const densityScore = blob.density;
-        const centerScore = Math.max(0, 1.0 - (distFromMidline / (eyeDist * 0.42)));
+        // Score components:
+        // 1. Aspect Ratio / Squareness Score (1.0 = square)
+        const shapeScore = 1.0 - Math.min(1.0, Math.abs(1.0 - aspectRatio) * 0.55);
+        // 2. Boxiness / Rectangular Solidity (Tefillin is solid 70-95%, hair is diffuse)
+        const boxinessScore = Math.min(1.0, blob.density * 1.20);
+        // 3. Sagittal Centering Score (Mid-eyes alignment)
+        const centerScore = Math.max(0, 1.0 - (distFromMidline / (eyeDist * 0.40)));
+        // 4. Edge Sharpness Score (Leather contrast vs background)
+        const sharpnessScore = Math.min(1.0, blob.avgBoundarySharpness / 30.0);
+        // 5. Volume Score
         const countScore = Math.min(1.0, blob.count / (eyeDist * eyeDist * 0.08));
-        const totalScore = (densityScore * 3.5) + (shapeScore * 2.5) + (centerScore * 3.5) + countScore;
+
+        const totalScore = (boxinessScore * 3.5) + (shapeScore * 2.5) + (centerScore * 4.0) + (sharpnessScore * 1.5) + countScore;
 
         const evaluated = {
           id: idx + 1,

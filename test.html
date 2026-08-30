@@ -667,6 +667,11 @@
       const next = faceMeshQueue.shift();
       activeFaceMeshResolver = next.resolve;
 
+      // Reset FaceMesh tracking state so each static image is evaluated independently
+      if (typeof faceMesh.reset === 'function') {
+        faceMesh.reset();
+      }
+
       TefillinEngine.prepareCanvasForImage(next.img, inferenceCanvas, 540);
       faceMesh.send({ image: inferenceCanvas }).catch(err => {
         console.error("FaceMesh send error:", err);
@@ -799,6 +804,8 @@
         if (reqId !== currentPhotoRequestId) return; // Stale request, ignore
 
         currentImageElement = img;
+        latestLandmarks = null; // Clear previous landmarks immediately to avoid stale overlap
+
         const landmarks = await detectLandmarksForImage(img);
 
         if (reqId !== currentPhotoRequestId) return; // Another image was selected while detecting
