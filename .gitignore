@@ -5,7 +5,14 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Temp diagnostics
+# Local sample images and generated data (keep local, do not push to git)
+samples/
+samples_data.js
+*.jpeg
+*.jpg
+*.png
+
+# Temp diagnostic scripts
 diag.ps1
 deep_diag.ps1
 run_batch_test.ps1
