@@ -8,21 +8,28 @@ const TefillinEngine = (function () {
 
   /**
    * 1. Extract 3D Facial Geometry & Halachic Reference Points from MediaPipe 468/478 Landmarks
+   * Using Option 1: Multi-Thirds Facial Anthropometry (The Da Vinci / Farkas Canon)
    */
   function analyzeFaceGeometry(landmarks, width, height, hairlineUserAdj = 0) {
     if (!landmarks || landmarks.length === 0) return null;
 
-    const midEyes = landmarks[168];      // Mid-point between eyes / glabella
-    const noseBridge = landmarks[6];     // Upper nasal bridge
+    // Key Anthropometric Landmarks
+    const midEyes = landmarks[168];      // Glabella / Mid-point between eyes & eyebrows
+    const noseBridge = landmarks[6];     // Upper nasal bridge / Nasion
     const meshTop = landmarks[10];       // Top of forehead mesh
     const eyeLeft = landmarks[33];       // Outer/inner left eye
     const eyeRight = landmarks[263];     // Outer/inner right eye
+    const subnasale = landmarks[2];      // Subnasale (base of nose septum)
+    const menton = landmarks[152];       // Menton (bottom tip of chin)
 
     const eyeLeftPt = { x: eyeLeft.x * width, y: eyeLeft.y * height };
     const eyeRightPt = { x: eyeRight.x * width, y: eyeRight.y * height };
     const midEyesPt = { x: midEyes.x * width, y: midEyes.y * height };
     const nosePt = { x: noseBridge.x * width, y: noseBridge.y * height };
     const meshTopPt = { x: meshTop.x * width, y: meshTop.y * height };
+
+    const subnasalePt = subnasale ? { x: subnasale.x * width, y: subnasale.y * height } : null;
+    const mentonPt = menton ? { x: menton.x * width, y: menton.y * height } : null;
 
     // Eye distance scale (invariant to camera distance)
     const eyeVector = { x: eyeRightPt.x - eyeLeftPt.x, y: eyeRightPt.y - eyeLeftPt.y };
@@ -40,12 +47,50 @@ const TefillinEngine = (function () {
     const pitchAngle = Math.atan2(dz, Math.abs(dy));
     const pitchCompression = Math.max(0.7, Math.cos(pitchAngle));
 
-    // Hairline root boundary (starts at natural hair roots above forehead)
-    const baseHairlineRatio = (0.26 + hairlineUserAdj) * pitchCompression;
-    const hairlineOffset = eyeDist * baseHairlineRatio;
+    // --- OPTION 1: MULTI-THIRDS FACIAL ANTHROPOMETRY (DA VINCI / FARKAS CANON) ---
+    // Middle Third Height: Subnasale (#2) to Glabella (#168) projected along facial UP vector
+    let midThirdHeight = 0;
+    if (subnasalePt) {
+      const vMidX = midEyesPt.x - subnasalePt.x;
+      const vMidY = midEyesPt.y - subnasalePt.y;
+      midThirdHeight = Math.abs(vMidX * uUp.x + vMidY * uUp.y);
+    }
+
+    // Lower Third Height: Menton (#152) to Subnasale (#2) projected along facial UP vector
+    let lowerThirdHeight = 0;
+    if (mentonPt && subnasalePt) {
+      const vLowerX = subnasalePt.x - mentonPt.x;
+      const vLowerY = subnasalePt.y - mentonPt.y;
+      lowerThirdHeight = Math.abs(vLowerX * uUp.x + vLowerY * uUp.y);
+    }
+
+    // Validate physiological bounds of facial thirds relative to inter-ocular scale
+    const isValidMidThird = midThirdHeight >= eyeDist * 0.45 && midThirdHeight <= eyeDist * 1.50;
+    const isValidLowerThird = lowerThirdHeight >= eyeDist * 0.45 && lowerThirdHeight <= eyeDist * 1.80;
+
+    let referenceThird = 0;
+    if (isValidMidThird && isValidLowerThird) {
+      // Both facial thirds visible and anatomically consistent
+      referenceThird = (midThirdHeight * 0.55 + lowerThirdHeight * 0.45);
+    } else if (isValidMidThird) {
+      // Chin cropped or occluded by tallit/beard; rely on middle third
+      referenceThird = midThirdHeight;
+    } else if (isValidLowerThird) {
+      // Midface occluded; rely on lower third
+      referenceThird = lowerThirdHeight;
+    } else {
+      // Extreme tight crop fallback based on interpupillary scale
+      referenceThird = eyeDist * 0.88;
+    }
+
+    // Anatomical Forehead Upper Third (Glabella -> Anatomical Trichion):
+    // In human craniofacial anatomy, natural Trichion = Glabella + (referenceThird)
+    const targetForeheadHeight = referenceThird * (0.98 + hairlineUserAdj) * pitchCompression;
+
+    // Projected Anatomical Hairline Point (Trichion) along facial UP axis from Glabella
     const hairlinePt = {
-      x: meshTopPt.x + uUp.x * hairlineOffset,
-      y: meshTopPt.y + uUp.y * hairlineOffset
+      x: midEyesPt.x + uUp.x * targetForeheadHeight,
+      y: midEyesPt.y + uUp.y * targetForeheadHeight
     };
 
     // Eyebrow Level Y (cutoff strictly above glasses frames & eyes)
@@ -62,6 +107,8 @@ const TefillinEngine = (function () {
       midEyesPt,
       nosePt,
       meshTopPt,
+      subnasalePt,
+      mentonPt,
       hairlinePt,
       eyeLeftPt,
       eyeRightPt,
@@ -70,6 +117,10 @@ const TefillinEngine = (function () {
       uUp,
       pitchAngle,
       pitchCompression,
+      midThirdHeight,
+      lowerThirdHeight,
+      referenceThird,
+      targetForeheadHeight,
       eyebrowLevelY,
       searchArea: { x: searchX, y: searchY, width: searchW, height: searchH }
     };

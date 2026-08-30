@@ -288,16 +288,16 @@ function onFaceResults(results) {
 
     if (!isCentered) {
       if (state.isMirrored) {
-        if (horizOffsetLocal > 0) needMoveRight = true;
+        if (horizOffset > 0) needMoveRight = true;
         else needMoveLeft = true;
       } else {
-        if (horizOffsetLocal > 0) needMoveLeft = true;
+        if (horizOffset > 0) needMoveLeft = true;
         else needMoveRight = true;
       }
     }
 
     // 7. FINAL STATE SELECTION
-    if (!isEntirelyOnScalp) {
+    if (!isKosher) {
       // LOWEST EDGE TOUCHES FOREHEAD -> RED ALERT
       statusDot.className = "status-indicator-dot misaligned";
       statusText.innerText = lang.foreheadWarning;
