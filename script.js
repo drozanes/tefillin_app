@@ -204,194 +204,6 @@ async function initCamera() {
   }
 }
 
-/**
- * Computer Vision Engine:
- * 1. Adaptive Color Masking (brightness & saturation)
- * 2. Morphological Dilation (bridges specular glare & block seams)
- * 3. Connected-Component Blob Analysis (BFS Flood-Fill)
- * 4. Geometry & Midline Scorer (isolates central Ketzitzah cube from side noise)
- */
-function detectTefillinBox(ctx, headSearchArea, eyeDist, midX) {
-  const { x, y, width, height } = headSearchArea;
-  if (width <= 10 || height <= 10) return null;
-
-  try {
-    const imgData = ctx.getImageData(x, y, width, height);
-    const data = imgData.data;
-
-    // 1. Raw segmentation of dark/black pixels
-    const rawMask = new Uint8Array(width * height);
-    let rawDarkCount = 0;
-
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const brightness = (r + g + b) / 3;
-      const saturationDiff = Math.max(r, g, b) - Math.min(r, g, b);
-
-      // Dark matte leather / black plastic criteria
-      // Brightness < 88 (handles room lighting / daylight highlights on leather)
-      // Saturation diff < 32 (strictly rejects colored blocks: yellow, red, green, blue)
-      if (brightness < 88 && saturationDiff < 32) {
-        rawMask[i >> 2] = 1;
-        rawDarkCount++;
-      }
-    }
-
-    if (rawDarkCount < 15) return null;
-
-    // 2. Morphological Dilation (2px radius) to bridge seams/specular reflections
-    const mask = new Uint8Array(width * height);
-    for (let py = 0; py < height; py++) {
-      for (let px = 0; px < width; px++) {
-        const idx = py * width + px;
-        if (rawMask[idx] === 1) {
-          mask[idx] = 1;
-          if (px > 0) mask[idx - 1] = 1;
-          if (px < width - 1) mask[idx + 1] = 1;
-          if (py > 0) mask[idx - width] = 1;
-          if (py < height - 1) mask[idx + width] = 1;
-          if (px > 1) mask[idx - 2] = 1;
-          if (px < width - 2) mask[idx + 2] = 1;
-          if (py > 1) mask[idx - width * 2] = 1;
-          if (py < height - 2) mask[idx + width * 2] = 1;
-        }
-      }
-    }
-
-    // 3. Connected Component Labeling (BFS Flood-Fill)
-    const visited = new Uint8Array(width * height);
-    const blobs = [];
-
-    for (let py = 0; py < height; py++) {
-      for (let px = 0; px < width; px++) {
-        const idx = py * width + px;
-        if (mask[idx] === 1 && !visited[idx]) {
-          let count = 0;
-          let minX = px, maxX = px, minY = py, maxY = py;
-          let sumX = 0, sumY = 0;
-
-          const queue = [idx];
-          visited[idx] = 1;
-          let qHead = 0;
-
-          while (qHead < queue.length) {
-            const curr = queue[qHead++];
-            const cx = curr % width;
-            const cy = (curr / width) | 0;
-
-            count++;
-            sumX += cx;
-            sumY += cy;
-
-            if (cx < minX) minX = cx;
-            if (cx > maxX) maxX = cx;
-            if (cy < minY) minY = cy;
-            if (cy > maxY) maxY = cy;
-
-            // 4-connected neighbors
-            if (cy > 0) {
-              const up = curr - width;
-              if (mask[up] === 1 && !visited[up]) { visited[up] = 1; queue.push(up); }
-            }
-            if (cy < height - 1) {
-              const down = curr + width;
-              if (mask[down] === 1 && !visited[down]) { visited[down] = 1; queue.push(down); }
-            }
-            if (cx > 0) {
-              const left = curr - 1;
-              if (mask[left] === 1 && !visited[left]) { visited[left] = 1; queue.push(left); }
-            }
-            if (cx < width - 1) {
-              const right = curr + 1;
-              if (mask[right] === 1 && !visited[right]) { visited[right] = 1; queue.push(right); }
-            }
-          }
-
-          const blobW = maxX - minX + 1;
-          const blobH = maxY - minY + 1;
-          const blobArea = blobW * blobH;
-          const density = count / blobArea;
-
-          blobs.push({
-            minX, maxX, minY, maxY,
-            width: blobW,
-            height: blobH,
-            count,
-            density,
-            avgX: sumX / count,
-            avgY: sumY / count
-          });
-        }
-      }
-    }
-
-    if (blobs.length === 0) return null;
-
-    // 4. Physical Thresholds for real Ketzitzah box (scales proportionally with face size)
-    const minPhysicalDim = Math.max(8, Math.round(eyeDist * 0.10));
-    const minPixelCount = Math.max(18, Math.round(eyeDist * eyeDist * 0.010));
-    const maxPhysicalSize = Math.round(eyeDist * 0.95);
-
-    let bestBlob = null;
-    let bestScore = -999;
-
-    for (const blob of blobs) {
-      // Must be a substantial block relative to face scale
-      if (blob.count < minPixelCount) continue;
-      if (blob.width < minPhysicalDim || blob.height < minPhysicalDim) continue;
-      if (blob.width > maxPhysicalSize || blob.height > maxPhysicalSize) continue;
-
-      const aspectRatio = blob.width / blob.height;
-      // Tefillin box is roughly square or rectangular (aspect ratio 0.28 to 2.8)
-      if (aspectRatio < 0.28 || aspectRatio > 2.8) continue;
-
-      // Solid density threshold
-      if (blob.density < 0.20) continue;
-
-      // Strict Midline Check: Tefillin MUST be along the facial center axis
-      const absCenterX = x + blob.avgX;
-      const distFromMidline = Math.abs(absCenterX - midX);
-
-      // Discard any blob that is clearly off to the side (e.g. side temple pieces/ears)
-      if (distFromMidline > eyeDist * 0.42) continue;
-
-      // Scoring factors
-      const shapeScore = 1.0 - Math.min(1.0, Math.abs(1.0 - aspectRatio) * 0.5);
-      const densityScore = blob.density;
-      const centerScore = Math.max(0, 1.0 - (distFromMidline / (eyeDist * 0.42)));
-      const countScore = Math.min(1.0, blob.count / (eyeDist * eyeDist * 0.08));
-
-      const totalScore = (densityScore * 3.5) + (shapeScore * 2.5) + (centerScore * 3.5) + countScore;
-
-      if (totalScore > bestScore) {
-        bestScore = totalScore;
-        bestBlob = blob;
-      }
-    }
-
-    if (bestBlob) {
-      return {
-        x: x + bestBlob.avgX,
-        y: y + bestBlob.avgY,
-        topY: y + bestBlob.minY,
-        bottomY: y + bestBlob.maxY,
-        leftX: x + bestBlob.minX,
-        rightX: x + bestBlob.maxX,
-        boxWidth: bestBlob.width,
-        boxHeight: bestBlob.height,
-        pixelCount: bestBlob.count,
-        density: bestBlob.density
-      };
-    }
-  } catch (e) {
-    console.error("Blob detection error:", e);
-  }
-
-  return null;
-}
-
 function onFaceResults(results) {
   canvas.width = webcam.videoWidth || 640;
   canvas.height = webcam.videoHeight || 480;
@@ -419,81 +231,21 @@ function onFaceResults(results) {
   const w = canvas.width;
   const h = canvas.height;
 
-  // 1. ANATOMICAL FACIAL LANDMARKS
-  const midEyes = landmarks[168];      
-  const noseBridge = landmarks[6];      
-  const meshTop = landmarks[10];        // MediaPipe top forehead landmark #10
-  const eyebrowLeft = landmarks[33];    
-  const eyebrowRight = landmarks[263];  
+  // 1. Extract 3D Geometry from Shared TefillinEngine
+  const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, w, h, state.hairlineUserAdjustment);
+  if (!geometry) { ctx.restore(); return; }
 
-  const eyeLeftPt = { x: eyebrowLeft.x * w, y: eyebrowLeft.y * h };
-  const eyeRightPt = { x: eyebrowRight.x * w, y: eyebrowRight.y * h };
-  const midEyesPt = { x: midEyes.x * w, y: midEyes.y * h };
-  const nosePt = { x: noseBridge.x * w, y: noseBridge.y * h };
-  const meshTopPt = { x: meshTop.x * w, y: meshTop.y * h };
+  // 2. Segment Dark Tefillin Ketzitzah Blob via TefillinEngine
+  const detectionResult = TefillinEngine.detectTefillinBlob(ctx, geometry.searchArea, geometry.eyeDist, geometry.midEyesPt.x);
+  const winner = detectionResult ? detectionResult.winner : null;
 
-  // Eyebrow Level Y (cutoff to strictly exclude glasses frames)
-  const eyebrowLevelY = Math.min(eyeLeftPt.y, eyeRightPt.y);
+  // 3. Evaluate Halachic Alignment Status
+  const alignment = TefillinEngine.evaluateAlignment(winner, geometry);
 
-  // Eye distance scale
-  const eyeVector = { x: eyeRightPt.x - eyeLeftPt.x, y: eyeRightPt.y - eyeLeftPt.y };
-  const eyeDist = Math.hypot(eyeVector.x, eyeVector.y);
-  const uEye = { x: eyeVector.x / eyeDist, y: eyeVector.y / eyeDist }; 
+  // 4. Render Overlays (Guides, Bounding Box, Lowest Edge Indicator)
+  TefillinEngine.renderOverlays(ctx, geometry, alignment, { showGuides: state.showGuides, showSearchBox: false });
 
-  // Face UP Unit Vector (pointing from nose bridge towards top of forehead)
-  const faceUpVector = {
-    x: meshTopPt.x - nosePt.x,
-    y: meshTopPt.y - nosePt.y
-  };
-  const faceLen = Math.hypot(faceUpVector.x, faceUpVector.y);
-  const uUp = { x: faceUpVector.x / faceLen, y: faceUpVector.y / faceLen }; 
-
-  // 3D Head Pitch Angle Compensation
-  // When looking slightly up or down, perspective compresses forehead distance
-  const dz = (meshTop.z - noseBridge.z) * w;
-  const dy = (meshTopPt.y - nosePt.y);
-  const pitchAngle = Math.atan2(dz, Math.abs(dy));
-  const pitchCompression = Math.max(0.7, Math.cos(pitchAngle));
-
-  // Hairline Point: Landmark #10 + proportional shift UP along head axis + user calibration
-  const baseHairlineRatio = (0.26 + state.hairlineUserAdjustment) * pitchCompression;
-  const hairlineOffset = eyeDist * baseHairlineRatio;
-  const hairlinePt = {
-    x: meshTopPt.x + uUp.x * hairlineOffset,
-    y: meshTopPt.y + uUp.y * hairlineOffset
-  };
-
-  // 3. SEARCH AREA FOR TEFILLIN KETZITZAH
-  // Generously covers upper head and forehead down to eyebrows without clipping
-  const searchW = Math.round(eyeDist * 1.30);
-  const searchX = Math.round(Math.max(0, midEyesPt.x - searchW / 2));
-  const searchY = Math.round(Math.max(0, hairlinePt.y - eyeDist * 2.2));
-  const searchBottom = Math.min(h, Math.max(hairlinePt.y + eyeDist * 0.40, eyebrowLevelY - 5));
-  const searchH = Math.round(Math.max(35, searchBottom - searchY));
-
-  const detectedTefillin = detectTefillinBox(ctx, { x: searchX, y: searchY, width: searchW, height: searchH }, eyeDist, midEyesPt.x);
-
-  if (state.showGuides) {
-    // Gold Symmetry Line (Dashed)
-    ctx.beginPath();
-    ctx.moveTo(midEyesPt.x - uUp.x * h * 0.5, midEyesPt.y - uUp.y * h * 0.5);
-    ctx.lineTo(midEyesPt.x + uUp.x * h * 0.5, midEyesPt.y + uUp.y * h * 0.5);
-    ctx.strokeStyle = "rgba(251, 191, 36, 0.85)";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 4]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Green Hairline Boundary Line
-    ctx.beginPath();
-    ctx.moveTo(hairlinePt.x - uEye.x * eyeDist * 1.3, hairlinePt.y - uEye.y * eyeDist * 1.3);
-    ctx.lineTo(hairlinePt.x + uEye.x * eyeDist * 1.3, hairlinePt.y + uEye.y * eyeDist * 1.3);
-    ctx.strokeStyle = "rgba(34, 197, 94, 0.9)";
-    ctx.lineWidth = 3;
-    ctx.stroke();
-  }
-
-  if (!detectedTefillin) {
+  if (!winner) {
     state.tefillinFound = false;
     statusDot.className = "status-indicator-dot searching";
     statusText.innerText = lang.noTefillin;
@@ -515,62 +267,17 @@ function onFaceResults(results) {
     detectValue.style.color = "var(--accent-green)";
     detectStatus.innerText = lang.detectOk;
 
-    // LOWEST EDGE OF KETZITZAH BOX ONLY
-    const lowestEdgeX = detectedTefillin.x;
-    const lowestEdgeY = detectedTefillin.bottomY;
+    const { isKosher, isCentered, distAboveHairline, horizOffset } = alignment;
 
-    // Vector from Hairline Landmark to lowest edge of Ketzitzah box
-    const lowestEdgeVector = {
-      x: lowestEdgeX - hairlinePt.x,
-      y: lowestEdgeY - hairlinePt.y
-    };
+    // Vertical Scalp Metric
+    vertValue.innerText = isKosher ? `תקין (${distAboveHairline}px מעל מצח)` : `פסול! (${Math.abs(distAboveHairline)}px על המצח)`;
+    vertBar.style.width = isKosher ? "90%" : "15%";
+    vertStatus.innerText = isKosher ? lang.hairStatusOk : lang.hairStatusErr;
+    vertStatus.style.color = isKosher ? "var(--accent-green)" : "var(--accent-red)";
 
-    // Dot product with uUp vector (uUp points UP towards scalp):
-    // Positive = Lowest edge is ABOVE hairline on scalp.
-    // Negative = Lowest edge is BELOW hairline on forehead skin.
-    const distAboveHairline = (lowestEdgeVector.x * uUp.x + lowestEdgeVector.y * uUp.y);
-    const foreheadTolerance = Math.max(5, Math.round(eyeDist * 0.04));
-
-    // HALACHIC ZERO TOLERANCE:
-    // Is the lowest edge of the Ketzitzah box above or at the hairline root?
-    const isEntirelyOnScalp = distAboveHairline >= -foreheadTolerance;
-
-    // 1. Draw tight bounding box directly around the isolated Ketzitzah cube
-    ctx.strokeStyle = isEntirelyOnScalp ? "#22c55e" : "#ef4444";
-    ctx.lineWidth = 2.5;
-    ctx.strokeRect(detectedTefillin.leftX, detectedTefillin.topY, detectedTefillin.boxWidth, detectedTefillin.boxHeight);
-
-    // 2. Draw prominent lowest edge indicator line
-    ctx.beginPath();
-    ctx.moveTo(detectedTefillin.leftX - 4, lowestEdgeY);
-    ctx.lineTo(detectedTefillin.rightX + 4, lowestEdgeY);
-    ctx.strokeStyle = isEntirelyOnScalp ? "#22c55e" : "#ef4444";
-    ctx.lineWidth = 3.5;
-    ctx.stroke();
-
-    // 3. Draw center dot
-    ctx.beginPath();
-    ctx.arc(detectedTefillin.x, detectedTefillin.y, 4, 0, Math.PI * 2);
-    ctx.fillStyle = isEntirelyOnScalp ? "#22c55e" : "#ef4444";
-    ctx.fill();
-
-    // Display metric in UI
-    const debugDist = Math.round(distAboveHairline);
-    vertValue.innerText = isEntirelyOnScalp ? `תקין (${debugDist}px מעל מצח)` : `פסול! (${Math.abs(debugDist)}px על המצח)`;
-    vertBar.style.width = isEntirelyOnScalp ? "90%" : "15%";
-    vertStatus.innerText = isEntirelyOnScalp ? lang.hairStatusOk : lang.hairStatusErr;
-    vertStatus.style.color = isEntirelyOnScalp ? "var(--accent-green)" : "var(--accent-red)";
-
-    // 5. HORIZONTAL EVALUATION
-    const tefillinVec = {
-      x: detectedTefillin.x - midEyesPt.x,
-      y: detectedTefillin.y - midEyesPt.y
-    };
-    const horizOffsetLocal = (tefillinVec.x * uEye.x + tefillinVec.y * uEye.y);
-
-    const isCentered = Math.abs(horizOffsetLocal) < (eyeDist * 0.16);
-    horizValue.innerText = `${horizOffsetLocal > 0 ? '+' : ''}${Math.round(horizOffsetLocal)}px`;
-    const fillPct = Math.min(Math.max(50 + (horizOffsetLocal / (eyeDist * 0.5)) * 50, 5), 95);
+    // Horizontal Alignment Metric
+    horizValue.innerText = `${horizOffset > 0 ? '+' : ''}${horizOffset}px`;
+    const fillPct = Math.min(Math.max(50 + (horizOffset / (geometry.eyeDist * 0.5)) * 50, 5), 95);
     horizBar.style.width = `${fillPct}%`;
     horizStatus.innerText = isCentered ? lang.centerStatusOk : lang.centerStatusOff;
     horizStatus.style.color = isCentered ? "var(--accent-green)" : "var(--accent-gold)";

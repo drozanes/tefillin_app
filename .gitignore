@@ -5,10 +5,7 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Local Dev Test Harness
-test.html
-samples_data.js
-generate_samples.ps1
-run_batch_test.ps1
+# Temp diagnostics
 diag.ps1
-samples/
+deep_diag.ps1
+run_batch_test.ps1

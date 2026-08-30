@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tefillin Dev Studio & Automated Bulk Test Suite</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;900&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+
+  <!-- MediaPipe Face Mesh -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+  <!-- Shared Tefillin Algorithm Engine -->
+  <script src="tefillin_engine.js"></script>
+
+  <!-- Local Base64 Samples & Ground Truth Data -->
+  <script src="samples_data.js"></script>
+
+  <style>
+    :root {
+      --bg: #090d16;
+      --surface: #131b2e;
+      --surface-elevated: #1a243d;
+      --surface-border: rgba(255, 255, 255, 0.1);
+      --accent-gold: #f59e0b;
+      --accent-gold-glow: rgba(245, 158, 11, 0.25);
+      --accent-cyan: #38bdf8;
+      --accent-green: #22c55e;
+      --accent-green-glow: rgba(34, 197, 94, 0.25);
+      --accent-red: #ef4444;
+      --accent-red-glow: rgba(239, 68, 68, 0.25);
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Heebo', system-ui, sans-serif;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .dev-container {
+      width: 100%;
+      max-width: 1280px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      padding: 14px 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+
+    .btn {
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--surface-border);
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover { background: rgba(255, 255, 255, 0.16); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border-color: #3b82f6;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #1d4ed8, #1e40af);
+    }
+
+    .btn-gold {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      border-color: #fbbf24;
+      color: #000;
+      box-shadow: 0 4px 14px var(--accent-gold-glow);
+    }
+
+    .btn-gold:hover {
+      background: linear-gradient(135deg, #d97706, #b45309);
+    }
+
+    /* Tabs & Filters */
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .tab-btn {
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border-radius: 6px;
+      border: 1px solid var(--surface-border);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      background: rgba(245, 158, 11, 0.2);
+      border-color: var(--accent-gold);
+      color: var(--text);
+    }
+
+    /* Bulk Test Summary Banner */
+    .bulk-summary-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .summary-stats {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .stat-box {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .stat-box span { font-size: 0.75rem; color: var(--text-muted); }
+    .stat-box b { font-size: 1.2rem; font-family: 'JetBrains Mono', monospace; }
+
+    .progress-bar-container {
+      flex: 1;
+      min-width: 200px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .progress-bar {
+      height: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 5px;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent-green);
+      transition: width 0.3s ease;
+    }
+
+    /* Gallery selector */
+    .gallery-section {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .gallery-grid {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+    }
+
+    .gallery-card {
+      background: #000;
+      border: 2px solid transparent;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      flex-shrink: 0;
+      width: 100px;
+      height: 100px;
+      position: relative;
+      transition: all 0.2s;
+    }
+
+    .gallery-card:hover { border-color: var(--accent-cyan); }
+    .gallery-card.active { border-color: var(--accent-gold); box-shadow: 0 0 12px var(--accent-gold); }
+
+    .gallery-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .gallery-card .card-badge {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: 0.65rem;
+      font-weight: 800;
+    }
+
+    .card-badge.aligned { background: rgba(34, 197, 94, 0.9); color: #000; }
+    .card-badge.forehead_error { background: rgba(239, 68, 68, 0.9); color: #fff; }
+
+    .gallery-card span.card-title {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(0, 0, 0, 0.8);
+      font-size: 0.65rem;
+      text-align: center;
+      padding: 2px 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .drop-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border: 2px dashed var(--accent-cyan);
+      background: rgba(56, 189, 248, 0.05);
+      color: var(--accent-cyan);
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-align: center;
+      padding: 8px;
+      cursor: pointer;
+    }
+
+    /* Main Workspace Grid */
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 960px) {
+      .workspace-grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .canvas-container {
+      position: relative;
+      width: 100%;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 440px;
+    }
+
+    #testCanvas {
+      max-width: 100%;
+      max-height: 480px;
+      object-fit: contain;
+    }
+
+    /* Controls & Tuning Sliders */
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .control-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+
+    .control-item label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .control-item input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent-gold);
+    }
+
+    /* Tables */
+    .table-container {
+      overflow-x: auto;
+      max-height: 240px;
+      border-radius: 6px;
+      border: 1px solid var(--surface-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    th, td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--surface-border);
+      text-align: right;
+    }
+
+    th { color: var(--text-muted); background: rgba(0, 0, 0, 0.4); font-weight: 600; }
+    tr.winner { background: rgba(34, 197, 94, 0.12); color: var(--accent-green); font-weight: bold; }
+    tr.bulk-pass { background: rgba(34, 197, 94, 0.08); }
+    tr.bulk-fail { background: rgba(239, 68, 68, 0.12); }
+
+    .tag-pass {
+      background: rgba(34, 197, 94, 0.2);
+      color: var(--accent-green);
+      border: 1px solid var(--accent-green);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 800;
+    }
+
+    .tag-fail {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--accent-red);
+      border: 1px solid var(--accent-red);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 800;
+    }
+
+    .status-select {
+      background: #000;
+      color: #fff;
+      border: 1px solid var(--surface-border);
+      border-radius: 4px;
+      padding: 3px 6px;
+      font-size: 0.72rem;
+      font-family: inherit;
+    }
+
+    /* Result Banner */
+    .result-banner {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.92rem;
+    }
+
+    .result-banner.green { background: rgba(34, 197, 94, 0.2); border: 1px solid var(--accent-green); color: var(--accent-green); }
+    .result-banner.red { background: rgba(239, 68, 68, 0.2); border: 1px solid var(--accent-red); color: var(--accent-red); }
+    .result-banner.yellow { background: rgba(245, 158, 11, 0.2); border: 1px solid var(--accent-gold); color: var(--accent-gold); }
+  </style>
+</head>
+<body>
+  <div class="dev-container">
+    <header>
+      <div>
+        <h2>🔬 סביבת פיתוח ובדיקות כוללות | Tefillin Test & Benchmark Suite</h2>
+        <p style="font-size: 0.8rem; color: var(--text-muted);">
+          מערכת בדיקה אוטומטית על תיקיית הדוגמאות (<code>samples/</code>) עם השוואה מול תוצאות רצויות (Ground Truth)
+        </p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button id="btnRunBulk" class="btn btn-gold">🚀 הרץ בדיקה כוללת (Run Bulk Test)</button>
+        <button id="btnExportConfig" class="btn" title="הורד/העתק תוצאות צפויות">💾 שמור תוצאות רצויות</button>
+      </div>
+    </header>
+
+    <!-- Bulk Test Summary Banner -->
+    <section class="bulk-summary-card" id="bulkSummaryCard">
+      <div class="summary-stats">
+        <div class="stat-box">
+          <span>סה"כ תמונות:</span>
+          <b id="statTotal">--</b>
+        </div>
+        <div class="stat-box">
+          <span>תואם (Passed):</span>
+          <b id="statPassed" style="color: var(--accent-green);">--</b>
+        </div>
+        <div class="stat-box">
+          <span>אי-התאמה (Failed):</span>
+          <b id="statFailed" style="color: var(--accent-red);">--</b>
+        </div>
+        <div class="stat-box">
+          <span>אחוז דיוק כולל:</span>
+          <b id="statAccuracy" style="color: var(--accent-gold);">--%</b>
+        </div>
+      </div>
+
+      <div class="progress-bar-container">
+        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
+          <span id="lblProgressStatus">מוכן להרצה</span>
+          <span id="lblProgressPercent">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-bar-fill" id="bulkProgressBar" style="width: 0%;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bulk Results Table (Collapsed / Expanded) -->
+    <section class="panel" id="bulkTablePanel" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3>📋 תוצאות בדיקה כוללת על כל הדוגמאות (Bulk Test Results)</h3>
+        <span style="font-size: 0.75rem; color: var(--text-muted);">לחצו על שורה כדי לטעון אותה בלוח הבדיקה המיידי</span>
+      </div>
+      <div class="table-container" style="max-height: 280px;">
+        <table>
+          <thead>
+            <tr>
+              <th>תמונה</th>
+              <th>שם קובץ</th>
+              <th>תוצאה רצויה (Expected)</th>
+              <th>תוצאת אלגוריתם (Detected)</th>
+              <th>מדדים שנמדדו</th>
+              <th>התאמה</th>
+              <th>פעולה</th>
+            </tr>
+          </thead>
+          <tbody id="bulkTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Gallery Selector -->
+    <section class="gallery-section">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <h3 style="font-size: 0.9rem; color: var(--accent-gold);">🖼️ גלריית תמונות:</h3>
+          <div class="tab-bar">
+            <button class="tab-btn active" id="tabOK">🟢 תיקיית OK (תקין כהלכה)</button>
+            <button class="tab-btn" id="tabWrong">🔴 תיקיית WRONG (פסול / שגיאות)</button>
+            <button class="tab-btn" id="tabCropped">📁 cropped/</button>
+            <button class="tab-btn" id="tabRoot">📁 root/</button>
+            <button class="tab-btn" id="tabAll">כל התמונות</button>
+          </div>
+        </div>
+        <span style="font-size: 0.75rem; color: var(--text-muted);" id="lblSampleCount">-- תמונות</span>
+      </div>
+
+      <div class="gallery-grid" id="galleryGrid">
+        <div class="gallery-card drop-card" id="dropCard">
+          <span>📁 העלאת תמונה<br>(או גררו לכאן)</span>
+          <input type="file" id="fileInput" accept="image/*" style="display: none;">
+        </div>
+      </div>
+    </section>
+
+    <!-- Workspace Grid -->
+    <div class="workspace-grid">
+      <!-- Left: Image & Overlays -->
+      <div class="panel">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h3 id="currentImageTitle">📸 תצוגת זיהוי וקווי הלכה</h3>
+          <label style="font-size: 0.78rem; color: var(--accent-cyan); cursor: pointer;">
+            <input type="checkbox" id="showMaskToggle"> הצג מסכת פיקסלים שחורים (Debug Mask)
+          </label>
+        </div>
+
+        <div class="canvas-container">
+          <canvas id="testCanvas"></canvas>
+        </div>
+
+        <!-- Result Banner -->
+        <div id="resultBanner" class="result-banner yellow">
+          <span id="resultText">מפעיל ניתוח תמונה...</span>
+          <span id="resultScore">--</span>
+        </div>
+      </div>
+
+      <!-- Right: Tuning Sliders & Blob Inspector -->
+      <div class="panel">
+        <h3>⚙️ כוונון פרמטרים בזמן אמת (Real-Time Threshold Tuner)</h3>
+        <div class="controls-grid">
+          <div class="control-item">
+            <label><span>סף בהירות שחור (Brightness)</span><b id="lblBrightness">88</b></label>
+            <input type="range" id="sliderBrightness" min="40" max="130" value="88">
+          </div>
+          <div class="control-item">
+            <label><span>סף רוויה צבעונית (Max Color Diff)</span><b id="lblSaturation">32</b></label>
+            <input type="range" id="sliderSaturation" min="10" max="60" value="32">
+          </div>
+          <div class="control-item">
+            <label><span>גודל מינימלי (% ממרחק עיניים)</span><b id="lblMinSize">14%</b></label>
+            <input type="range" id="sliderMinSize" min="8" max="35" value="14">
+          </div>
+          <div class="control-item">
+            <label><span>הסטת קו שיער (Hairline Offset)</span><b id="lblHairlineOffset">+0.00</b></label>
+            <input type="range" id="sliderHairlineOffset" min="-0.20" max="0.30" step="0.02" value="0.00">
+          </div>
+        </div>
+
+        <h3 style="margin-top: 6px;">📊 רשימת גושים מזוהים בתמונה (Connected Blobs)</h3>
+        <div class="table-container" style="max-height: 180px;">
+          <table>
+            <thead>
+              <tr>
+                <th>גוש #</th>
+                <th>מימדים (WxH)</th>
+                <th>פיקסלים</th>
+                <th>צפיפות (Density)</th>
+                <th>מרחק מאמצע</th>
+                <th>ציון סופי</th>
+                <th>סטטוס</th>
+              </tr>
+            </thead>
+            <tbody id="blobsTableBody">
+              <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">אין נתונים</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 8px; font-size: 0.75rem; color: var(--text-muted);">
+          <b>💡 סטטוסים מוכרים:</b>
+          <code>ALIGNED</code> (תקין כהלכה במקום שיער) • <code>FOREHEAD_ERROR</code> (פסול - גלש למצח) • <code>OFF_CENTER</code> (סטייה מהאמצע) • <code>NO_TEFILLIN</code> (לא זוהה)
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // All available sample images (From samples_data.js)
+    const allSamples = (typeof embeddedSamples !== 'undefined' && embeddedSamples.length > 0)
+      ? embeddedSamples
+      : [];
+
+    let currentFilter = 'OK';
+    let currentSampleIndex = 0;
+    let currentImageElement = null;
+    let latestLandmarks = null;
+    let isBulkRunning = false;
+
+    // DOM Elements
+    const canvas = document.getElementById('testCanvas');
+    const ctx = canvas.getContext('2d');
+    const galleryGrid = document.getElementById('galleryGrid');
+    const dropCard = document.getElementById('dropCard');
+    const fileInput = document.getElementById('fileInput');
+
+    const tabOK = document.getElementById('tabOK');
+    const tabWrong = document.getElementById('tabWrong');
+    const tabCropped = document.getElementById('tabCropped');
+    const tabRoot = document.getElementById('tabRoot');
+    const tabAll = document.getElementById('tabAll');
+    const allTabBtns = [tabOK, tabWrong, tabCropped, tabRoot, tabAll];
+    const lblSampleCount = document.getElementById('lblSampleCount');
+
+    const btnRunBulk = document.getElementById('btnRunBulk');
+    const btnExportConfig = document.getElementById('btnExportConfig');
+    const bulkTablePanel = document.getElementById('bulkTablePanel');
+    const bulkTableBody = document.getElementById('bulkTableBody');
+    const bulkProgressBar = document.getElementById('bulkProgressBar');
+    const lblProgressStatus = document.getElementById('lblProgressStatus');
+    const lblProgressPercent = document.getElementById('lblProgressPercent');
+
+    const statTotal = document.getElementById('statTotal');
+    const statPassed = document.getElementById('statPassed');
+    const statFailed = document.getElementById('statFailed');
+    const statAccuracy = document.getElementById('statAccuracy');
+
+    const sliderBrightness = document.getElementById('sliderBrightness');
+    const sliderSaturation = document.getElementById('sliderSaturation');
+    const sliderMinSize = document.getElementById('sliderMinSize');
+    const sliderHairlineOffset = document.getElementById('sliderHairlineOffset');
+
+    const lblBrightness = document.getElementById('lblBrightness');
+    const lblSaturation = document.getElementById('lblSaturation');
+    const lblMinSize = document.getElementById('lblMinSize');
+    const lblHairlineOffset = document.getElementById('lblHairlineOffset');
+
+    const showMaskToggle = document.getElementById('showMaskToggle');
+    const resultBanner = document.getElementById('resultBanner');
+    const resultText = document.getElementById('resultText');
+    const resultScore = document.getElementById('resultScore');
+    const blobsTableBody = document.getElementById('blobsTableBody');
+    const currentImageTitle = document.getElementById('currentImageTitle');
+
+    // MediaPipe FaceMesh Instance (Configured with 0.35 confidence for cropped faces & tallitot)
+    const faceMesh = new FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.35,
+      minTrackingConfidence: 0.35
+    });
+
+    faceMesh.onResults((results) => {
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        latestLandmarks = results.multiFaceLandmarks[0];
+      } else {
+        latestLandmarks = null;
+      }
+      runAnalysis();
+    });
+
+    function getFilteredSamples() {
+      if (currentFilter === 'all') return allSamples;
+      return allSamples.filter(s => s.group === currentFilter);
+    }
+
+    function renderGallery() {
+      // Clear all except dropCard
+      galleryGrid.querySelectorAll('.gallery-card:not(.drop-card)').forEach(c => c.remove());
+
+      const filtered = getFilteredSamples();
+      lblSampleCount.innerText = `${filtered.length} תמונות`;
+
+      filtered.forEach((imgObj, idx) => {
+        const card = document.createElement('div');
+        card.className = `gallery-card ${idx === currentSampleIndex ? 'active' : ''}`;
+        
+        const isOk = imgObj.group === 'OK' || imgObj.expected === 'ALIGNED';
+        const badgeClass = isOk ? 'aligned' : 'forehead_error';
+        const labelText = imgObj.group === 'OK' ? '🟢 כשר' : (imgObj.group === 'WRONG' ? '🔴 פסול' : (imgObj.expected || 'ALIGNED'));
+        
+        card.innerHTML = `
+          <img src="${imgObj.path}" alt="${imgObj.name}">
+          <span class="card-badge ${badgeClass}">🎯 יעד: ${labelText}</span>
+          <span class="card-title">${imgObj.name}</span>
+        `;
+        card.addEventListener('click', () => {
+          currentSampleIndex = idx;
+          loadPhoto(imgObj, card);
+        });
+        galleryGrid.appendChild(card);
+      });
+    }
+
+    function selectTab(filter, activeBtn) {
+      currentFilter = filter;
+      allTabBtns.forEach(t => t && t.classList.remove('active'));
+      if (activeBtn) activeBtn.classList.add('active');
+      currentSampleIndex = 0;
+      renderGallery();
+      const list = getFilteredSamples();
+      if (list.length > 0) loadPhoto(list[0], null);
+    }
+
+    tabOK.addEventListener('click', () => selectTab('OK', tabOK));
+    tabWrong.addEventListener('click', () => selectTab('WRONG', tabWrong));
+    if (tabCropped) tabCropped.addEventListener('click', () => selectTab('cropped/', tabCropped));
+    tabRoot.addEventListener('click', () => selectTab('root/', tabRoot));
+    tabAll.addEventListener('click', () => selectTab('all', tabAll));
+
+    dropCard.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const customSample = {
+            name: file.name,
+            group: 'custom',
+            expected: 'ALIGNED',
+            path: event.target.result
+          };
+          allSamples.unshift(customSample);
+          renderGallery();
+          loadPhoto(customSample, null);
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // Drag and drop handler
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        const file = e.dataTransfer.files[0];
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const customSample = {
+            name: file.name,
+            group: 'custom',
+            expected: 'ALIGNED',
+            path: event.target.result
+          };
+          allSamples.unshift(customSample);
+          renderGallery();
+          loadPhoto(customSample, null);
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    function loadPhoto(imgObj, cardElement) {
+      document.querySelectorAll('.gallery-card').forEach(c => c.classList.remove('active'));
+      if (cardElement) cardElement.classList.add('active');
+
+      currentImageTitle.innerText = `📸 תצוגת זיהוי: ${imgObj.name} (${imgObj.expected || 'ALIGNED'})`;
+
+      const img = new Image();
+      img.onload = async () => {
+        currentImageElement = img;
+        TefillinEngine.prepareCanvasForImage(img, canvas, 540);
+        await faceMesh.send({ image: canvas });
+      };
+      img.src = imgObj.path;
+    }
+
+    // Sliders Event Listeners
+    [sliderBrightness, sliderSaturation, sliderMinSize, sliderHairlineOffset, showMaskToggle].forEach(input => {
+      input.addEventListener('input', () => {
+        lblBrightness.innerText = sliderBrightness.value;
+        lblSaturation.innerText = sliderSaturation.value;
+        lblMinSize.innerText = sliderMinSize.value + '%';
+        const hVal = parseFloat(sliderHairlineOffset.value);
+        lblHairlineOffset.innerText = (hVal >= 0 ? '+' : '') + hVal.toFixed(2);
+        runAnalysis();
+      });
+    });
+
+    /**
+     * Exact Computer Vision Engine Execution on Static Photo via TefillinEngine
+     */
+    function runAnalysis() {
+      if (!currentImageElement) return;
+
+      const w = canvas.width;
+      const h = canvas.height;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(currentImageElement, 0, 0, w, h);
+
+      if (!latestLandmarks) {
+        resultBanner.className = "result-banner red";
+        resultText.innerText = "❌ לא זוהו פנים בתמונה";
+        resultScore.innerText = "NO_FACE";
+        blobsTableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--accent-red);">לא זוהו פנים (נסו תמונה ברורה יותר)</td></tr>`;
+        return { status: "NO_FACE", details: "לא זוהו פנים" };
+      }
+
+      const userHairAdj = parseFloat(sliderHairlineOffset.value);
+      const brightnessThresh = parseInt(sliderBrightness.value);
+      const saturationThresh = parseInt(sliderSaturation.value);
+      const minSizePct = parseInt(sliderMinSize.value) / 100;
+
+      // 1. Analyze 3D Geometry via TefillinEngine
+      const geometry = TefillinEngine.analyzeFaceGeometry(latestLandmarks, w, h, userHairAdj);
+      if (!geometry) return { status: "NO_FACE", details: "שגיאה בחישוב גיאומטריה" };
+
+      // 2. Segment Dark Tefillin Blobs via TefillinEngine
+      const detectionResult = TefillinEngine.detectTefillinBlob(
+        ctx,
+        geometry.searchArea,
+        geometry.eyeDist,
+        geometry.midEyesPt.x,
+        { brightnessThreshold: brightnessThresh, saturationThreshold: saturationThresh, minSizePct }
+      );
+
+      // Render Debug Mask if toggled
+      if (showMaskToggle.checked && detectionResult && detectionResult.maskData) {
+        ctx.fillStyle = "rgba(56, 189, 248, 0.45)";
+        const { x, y, width, height } = geometry.searchArea;
+        for (let py = 0; py < height; py++) {
+          for (let px = 0; px < width; px++) {
+            if (detectionResult.maskData[py * width + px] === 1) {
+              ctx.fillRect(x + px, y + py, 1, 1);
+            }
+          }
+        }
+      }
+
+      const winner = detectionResult ? detectionResult.winner : null;
+
+      // 3. Evaluate Halachic Alignment via TefillinEngine
+      const alignment = TefillinEngine.evaluateAlignment(winner, geometry);
+
+      // 4. Render Guidelines & Graphical Overlays
+      TefillinEngine.renderOverlays(ctx, geometry, alignment, { showGuides: true, showSearchBox: true });
+
+      updateBlobsTable(detectionResult ? detectionResult.allBlobs : [], winner);
+
+      if (!winner) {
+        resultBanner.className = "result-banner red";
+        resultText.innerText = "⚠️ לא זוהו תפילין (קציצה) באזור הראש";
+        resultScore.innerText = "NO_TEFILLIN";
+        return { status: "NO_TEFILLIN", details: "לא זוהה גוש תפילין" };
+      }
+
+      const { isKosher, isCentered, distAboveHairline, horizOffset, status } = alignment;
+
+      if (!isKosher) {
+        resultBanner.className = "result-banner red";
+        resultText.innerText = `❌ פסול! קצה התפילין נוגע במצח (${Math.abs(distAboveHairline)}px מתחת לקו השיער)`;
+      } else if (isCentered) {
+        resultBanner.className = "result-banner green";
+        resultText.innerText = `✨ התפילין מונחות כהלכה! (ממורכז + ${distAboveHairline}px במקום שיער)`;
+      } else {
+        resultBanner.className = "result-banner yellow";
+        resultText.innerText = `⚠️ במקום שיער אך יש לכוון לאמצע (סטייה ${Math.round(horizOffset)}px)`;
+      }
+
+      resultScore.innerText = `${status} (${winner.boxWidth}x${winner.boxHeight}px)`;
+
+      return {
+        status,
+        distAboveHairline,
+        horizOffset,
+        boxWidth: winner.boxWidth,
+        boxHeight: winner.boxHeight,
+        density: winner.density
+      };
+    }
+
+    function updateBlobsTable(blobs, winner) {
+      if (!blobs || blobs.length === 0) {
+        blobsTableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">לא זוהו גושים שחורים באזור הסריקה</td></tr>`;
+        return;
+      }
+
+      blobsTableBody.innerHTML = blobs.map(b => {
+        const isWinner = winner && winner.id === b.id;
+        return `
+          <tr class="${isWinner ? 'winner' : ''}">
+            <td>${isWinner ? '⭐ #' + b.id : '#' + b.id}</td>
+            <td>${b.width}x${b.height}</td>
+            <td>${b.count}</td>
+            <td>${(b.density * 100).toFixed(0)}%</td>
+            <td>${Math.round(b.distFromMidline)}px</td>
+            <td>${b.totalScore}</td>
+            <td>${isWinner ? 'נבחר ✔️' : (b.rejectReason || 'ציון נמוך')}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    /**
+     * Automated Bulk Test Runner across all samples
+     */
+    async function runBulkTest() {
+      if (isBulkRunning) return;
+      isBulkRunning = true;
+      btnRunBulk.disabled = true;
+      btnRunBulk.innerText = "⏳ מריץ בדיקות...";
+
+      bulkTablePanel.style.display = "flex";
+      bulkTableBody.innerHTML = "";
+
+      const samples = getFilteredSamples();
+      statTotal.innerText = samples.length;
+
+      let passedCount = 0;
+      let failedCount = 0;
+
+      for (let i = 0; i < samples.length; i++) {
+        const sample = samples[i];
+        lblProgressStatus.innerText = `בודק ${i + 1} מתוך ${samples.length}: ${sample.name}`;
+        const pct = Math.round(((i + 1) / samples.length) * 100);
+        bulkProgressBar.style.width = pct + "%";
+        lblProgressPercent.innerText = pct + "%";
+
+        // Process image synchronously through faceMesh & TefillinEngine
+        const result = await processSingleImage(sample.path);
+
+        const expected = sample.expected || (sample.group === 'WRONG' ? 'FOREHEAD_ERROR' : 'ALIGNED');
+        const detected = result.status;
+        
+        let isMatch = false;
+        if (sample.group === 'OK') {
+          isMatch = (detected === 'ALIGNED' || detected === 'OFF_CENTER');
+        } else if (sample.group === 'WRONG') {
+          isMatch = (detected === 'FOREHEAD_ERROR');
+        } else {
+          isMatch = (expected === detected);
+        }
+
+        if (isMatch) passedCount++;
+        else failedCount++;
+
+        // Add row to table
+        const tr = document.createElement('tr');
+        tr.className = isMatch ? 'bulk-pass' : 'bulk-fail';
+        tr.innerHTML = `
+          <td><img src="${sample.path}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;"></td>
+          <td><b>${sample.name}</b><br><span style="font-size: 0.68rem; color: var(--text-muted);">${sample.description || ''}</span></td>
+          <td>
+            <select class="status-select" data-filename="${sample.name}">
+              <option value="ALIGNED" ${expected === 'ALIGNED' ? 'selected' : ''}>ALIGNED (תקין כהלכה)</option>
+              <option value="FOREHEAD_ERROR" ${expected === 'FOREHEAD_ERROR' ? 'selected' : ''}>FOREHEAD_ERROR (על המצח)</option>
+              <option value="OFF_CENTER" ${expected === 'OFF_CENTER' ? 'selected' : ''}>OFF_CENTER (לא ממורכז)</option>
+              <option value="NO_TEFILLIN" ${expected === 'NO_TEFILLIN' ? 'selected' : ''}>NO_TEFILLIN (לא זוהה)</option>
+            </select>
+          </td>
+          <td><b>${detected}</b></td>
+          <td style="font-size: 0.7rem;">${result.distAboveHairline !== undefined ? `גובה: ${result.distAboveHairline}px, אמצע: ${result.horizOffset}px` : result.details}</td>
+          <td><span class="${isMatch ? 'tag-pass' : 'tag-fail'}">${isMatch ? '🟢 PASS' : '🔴 FAIL'}</span></td>
+          <td><button class="btn" style="padding: 4px 8px; font-size: 0.7rem;" onclick="inspectSample('${sample.name}')">🔍 הצג</button></td>
+        `;
+
+        tr.querySelector('select').addEventListener('change', (e) => {
+          sample.expected = e.target.value;
+          runBulkTest();
+        });
+
+        bulkTableBody.appendChild(tr);
+
+        // Update stats
+        statPassed.innerText = passedCount;
+        statFailed.innerText = failedCount;
+        statAccuracy.innerText = Math.round((passedCount / (i + 1)) * 100) + "%";
+      }
+
+      lblProgressStatus.innerText = `בדיקה הושלמה! (${passedCount} תואמים מתוך ${samples.length})`;
+      btnRunBulk.disabled = false;
+      btnRunBulk.innerText = "🚀 הרץ בדיקה כוללת (Run Bulk Test)";
+      isBulkRunning = false;
+    }
+
+    function processSingleImage(src) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = async () => {
+          currentImageElement = img;
+          TefillinEngine.prepareCanvasForImage(img, canvas, 540);
+
+          // Temporary listener for bulk processing
+          const originalOnResults = faceMesh.onResults;
+          faceMesh.onResults((results) => {
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+              latestLandmarks = results.multiFaceLandmarks[0];
+            } else {
+              latestLandmarks = null;
+            }
+            const res = runAnalysis();
+            // Restore original onResults
+            faceMesh.onResults(originalOnResults);
+            resolve(res);
+          });
+
+          await faceMesh.send({ image: canvas });
+        };
+        img.src = src;
+      });
+    }
+
+    window.inspectSample = function(name) {
+      const found = allSamples.find(s => s.name === name);
+      if (found) {
+        loadPhoto(found, null);
+        window.scrollTo({ top: document.querySelector('.workspace-grid').offsetTop - 20, behavior: 'smooth' });
+      }
+    };
+
+    btnRunBulk.addEventListener('click', runBulkTest);
+
+    btnExportConfig.addEventListener('click', () => {
+      const config = {};
+      allSamples.forEach(s => {
+        config[s.name] = {
+          expected: s.expected || "ALIGNED",
+          description: s.description || ""
+        };
+      });
+      const jsonStr = JSON.stringify(config, null, 2);
+      navigator.clipboard.writeText(jsonStr);
+      alert("תוכן התוצאות הרצויות (JSON) הועתק ללוח! תוכלו להדביק אותו בקובץ samples/expected_results.json.");
+    });
+
+    // Auto-load first sample on load
+    window.addEventListener('DOMContentLoaded', () => {
+      renderGallery();
+      const samples = getFilteredSamples();
+      if (samples.length > 0) {
+        loadPhoto(samples[0], document.querySelector('.gallery-card'));
+      }
+    });
+  </script>
+</body>
+</html>
