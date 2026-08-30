@@ -635,14 +635,58 @@
       minTrackingConfidence: 0.35
     });
 
+    // Dedicated offscreen inference canvas to isolate FaceMesh detection from main display
+    const inferenceCanvas = document.createElement('canvas');
+
+    // Deterministic FaceMesh Request Queue (Prevents concurrency race conditions & callback overrides)
+    let activeFaceMeshResolver = null;
+    let isFaceMeshBusy = false;
+    const faceMeshQueue = [];
+
+    // SINGLE immutable FaceMesh onResults listener
     faceMesh.onResults((results) => {
-      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        latestLandmarks = results.multiFaceLandmarks[0];
-      } else {
-        latestLandmarks = null;
+      const landmarks = (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0)
+        ? results.multiFaceLandmarks[0]
+        : null;
+
+      if (activeFaceMeshResolver) {
+        const resolver = activeFaceMeshResolver;
+        activeFaceMeshResolver = null;
+        resolver(landmarks);
       }
-      runAnalysis();
+
+      processNextFaceMeshQueueItem();
     });
+
+    function processNextFaceMeshQueueItem() {
+      if (faceMeshQueue.length === 0) {
+        isFaceMeshBusy = false;
+        return;
+      }
+      isFaceMeshBusy = true;
+      const next = faceMeshQueue.shift();
+      activeFaceMeshResolver = next.resolve;
+
+      TefillinEngine.prepareCanvasForImage(next.img, inferenceCanvas, 540);
+      faceMesh.send({ image: inferenceCanvas }).catch(err => {
+        console.error("FaceMesh send error:", err);
+        if (activeFaceMeshResolver) {
+          const res = activeFaceMeshResolver;
+          activeFaceMeshResolver = null;
+          res(null);
+        }
+        processNextFaceMeshQueueItem();
+      });
+    }
+
+    function detectLandmarksForImage(img) {
+      return new Promise((resolve) => {
+        faceMeshQueue.push({ img, resolve });
+        if (!isFaceMeshBusy) {
+          processNextFaceMeshQueueItem();
+        }
+      });
+    }
 
     function getFilteredSamples() {
       if (currentFilter === 'all') return allSamples;
@@ -678,6 +722,10 @@
     }
 
     function selectTab(filter, activeBtn) {
+      // If a bulk test is in progress, request graceful abort
+      if (isBulkRunning) {
+        abortBulkTest = true;
+      }
       currentFilter = filter;
       allTabBtns.forEach(t => t && t.classList.remove('active'));
       if (activeBtn) activeBtn.classList.add('active');
@@ -735,22 +783,33 @@
       }
     });
 
-    function loadPhoto(imgObj, cardElement) {
+    let currentPhotoRequestId = 0;
+
+    async function loadPhoto(imgObj, cardElement) {
+      if (!imgObj) return;
       document.querySelectorAll('.gallery-card').forEach(c => c.classList.remove('active'));
       if (cardElement) cardElement.classList.add('active');
 
       currentImageTitle.innerText = `📸 תצוגת זיהוי: ${imgObj.name} (${imgObj.expected || 'ALIGNED'})`;
 
+      const reqId = ++currentPhotoRequestId;
+
       const img = new Image();
       img.onload = async () => {
+        if (reqId !== currentPhotoRequestId) return; // Stale request, ignore
+
         currentImageElement = img;
-        TefillinEngine.prepareCanvasForImage(img, canvas, 540);
-        await faceMesh.send({ image: canvas });
+        const landmarks = await detectLandmarksForImage(img);
+
+        if (reqId !== currentPhotoRequestId) return; // Another image was selected while detecting
+
+        latestLandmarks = landmarks;
+        runAnalysis();
       };
       img.src = imgObj.path;
     }
 
-    // Sliders Event Listeners
+    // Sliders Event Listeners (Instantly re-render without re-running MediaPipe)
     [sliderBrightness, sliderSaturation, sliderMinSize, sliderHairlineOffset, showMaskToggle].forEach(input => {
       input.addEventListener('input', () => {
         lblBrightness.innerText = sliderBrightness.value;
@@ -768,13 +827,9 @@
     function runAnalysis() {
       if (!currentImageElement) return;
 
+      TefillinEngine.prepareCanvasForImage(currentImageElement, canvas, 540);
       const w = canvas.width;
       const h = canvas.height;
-
-      ctx.clearRect(0, 0, w, h);
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(currentImageElement, 0, 0, w, h);
 
       if (!latestLandmarks) {
         resultBanner.className = "result-banner red";
@@ -882,8 +937,14 @@
     /**
      * Automated Bulk Test Runner across all samples
      */
+    let abortBulkTest = false;
+
     async function runBulkTest() {
-      if (isBulkRunning) return;
+      if (isBulkRunning) {
+        abortBulkTest = true;
+        await new Promise(r => setTimeout(r, 120));
+      }
+      abortBulkTest = false;
       isBulkRunning = true;
       btnRunBulk.disabled = true;
       btnRunBulk.innerText = "⏳ מריץ בדיקות...";
@@ -898,14 +959,19 @@
       let failedCount = 0;
 
       for (let i = 0; i < samples.length; i++) {
+        if (abortBulkTest) {
+          lblProgressStatus.innerText = "בדיקה הופסקה.";
+          break;
+        }
+
         const sample = samples[i];
         lblProgressStatus.innerText = `בודק ${i + 1} מתוך ${samples.length}: ${sample.name}`;
         const pct = Math.round(((i + 1) / samples.length) * 100);
         bulkProgressBar.style.width = pct + "%";
         lblProgressPercent.innerText = pct + "%";
 
-        // Process image synchronously through faceMesh & TefillinEngine
         const result = await processSingleImage(sample.path);
+        if (abortBulkTest) break;
 
         const expected = sample.expected || (sample.group === 'WRONG' ? 'FOREHEAD_ERROR' : 'ALIGNED');
         const detected = result.status;
@@ -922,7 +988,6 @@
         if (isMatch) passedCount++;
         else failedCount++;
 
-        // Add row to table
         const tr = document.createElement('tr');
         tr.className = isMatch ? 'bulk-pass' : 'bulk-fail';
         tr.innerHTML = `
@@ -937,7 +1002,7 @@
             </select>
           </td>
           <td><b>${detected}</b></td>
-          <td style="font-size: 0.7rem;">${result.distAboveHairline !== undefined ? `גובה: ${result.distAboveHairline}px, אמצע: ${result.horizOffset}px` : result.details}</td>
+          <td style="font-size: 0.7rem;">${result.distAboveHairline !== undefined ? `גובה: ${result.distAboveHairline}px, אמצע: ${result.horizOffset}px` : (result.details || '--')}</td>
           <td><span class="${isMatch ? 'tag-pass' : 'tag-fail'}">${isMatch ? '🟢 PASS' : '🔴 FAIL'}</span></td>
           <td><button class="btn" style="padding: 4px 8px; font-size: 0.7rem;" onclick="inspectSample('${sample.name}')">🔍 הצג</button></td>
         `;
@@ -949,13 +1014,14 @@
 
         bulkTableBody.appendChild(tr);
 
-        // Update stats
         statPassed.innerText = passedCount;
         statFailed.innerText = failedCount;
         statAccuracy.innerText = Math.round((passedCount / (i + 1)) * 100) + "%";
       }
 
-      lblProgressStatus.innerText = `בדיקה הושלמה! (${passedCount} תואמים מתוך ${samples.length})`;
+      if (!abortBulkTest) {
+        lblProgressStatus.innerText = `בדיקה הושלמה! (${passedCount} תואמים מתוך ${samples.length})`;
+      }
       btnRunBulk.disabled = false;
       btnRunBulk.innerText = "🚀 הרץ בדיקה כוללת (Run Bulk Test)";
       isBulkRunning = false;
@@ -965,25 +1031,47 @@
       return new Promise((resolve) => {
         const img = new Image();
         img.onload = async () => {
-          currentImageElement = img;
-          TefillinEngine.prepareCanvasForImage(img, canvas, 540);
+          const landmarks = await detectLandmarksForImage(img);
+          if (!landmarks) {
+            resolve({ status: "NO_FACE", details: "לא זוהו פנים" });
+            return;
+          }
 
-          // Temporary listener for bulk processing
-          const originalOnResults = faceMesh.onResults;
-          faceMesh.onResults((results) => {
-            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-              latestLandmarks = results.multiFaceLandmarks[0];
-            } else {
-              latestLandmarks = null;
-            }
-            const res = runAnalysis();
-            // Restore original onResults
-            faceMesh.onResults(originalOnResults);
-            resolve(res);
+          // Evaluate with TefillinEngine on isolated offscreen canvas
+          const tempCanvas = document.createElement('canvas');
+          TefillinEngine.prepareCanvasForImage(img, tempCanvas, 540);
+          const tempCtx = tempCanvas.getContext('2d');
+
+          const userHairAdj = parseFloat(sliderHairlineOffset.value);
+          const brightnessThresh = parseInt(sliderBrightness.value);
+          const saturationThresh = parseInt(sliderSaturation.value);
+          const minSizePct = parseInt(sliderMinSize.value) / 100;
+
+          const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, tempCanvas.width, tempCanvas.height, userHairAdj);
+          if (!geometry) {
+            resolve({ status: "NO_FACE", details: "שגיאה בגיאומטריה" });
+            return;
+          }
+
+          const detectionResult = TefillinEngine.detectTefillinBlob(
+            tempCtx,
+            geometry.searchArea,
+            geometry.eyeDist,
+            geometry.midEyesPt.x,
+            { brightnessThreshold: brightnessThresh, saturationThreshold: saturationThresh, minSizePct }
+          );
+
+          const winner = detectionResult ? detectionResult.winner : null;
+          const alignment = TefillinEngine.evaluateAlignment(winner, geometry);
+
+          resolve({
+            status: alignment.status,
+            distAboveHairline: alignment.distAboveHairline,
+            horizOffset: alignment.horizOffset,
+            details: winner ? `${winner.boxWidth}x${winner.boxHeight}px` : "לא זוהה גוש תפילין"
           });
-
-          await faceMesh.send({ image: canvas });
         };
+        img.onerror = () => resolve({ status: "ERROR", details: "שגיאה בטעינת קובץ" });
         img.src = src;
       });
     }
