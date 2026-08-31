@@ -410,6 +410,7 @@
       </div>
       <div style="display: flex; gap: 8px;">
         <button id="btnRunBulk" class="btn btn-gold">🚀 הרץ בדיקה כוללת (Run Bulk Test)</button>
+        <button id="btnCopyDebugLogsHeader" class="btn" style="background: rgba(56, 189, 248, 0.2); border: 1px solid var(--accent-cyan); color: var(--accent-cyan);" title="העתק לוגים מפורטים של כל הבדיקות ללוח">📋 העתק לוגים (Copy Logs)</button>
         <button id="btnExportConfig" class="btn" title="הורד/העתק תוצאות צפויות">💾 שמור תוצאות רצויות</button>
       </div>
     </header>
@@ -564,6 +565,22 @@
         </div>
       </div>
     </div>
+
+    <!-- Debug Telemetry Console Panel -->
+    <section class="panel" id="debugLogsPanel" style="margin-top: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="color: var(--accent-cyan); font-size: 0.95rem;">🛠️ לוג דיבוג מפורט בזמן אמת (Diagnostic Telemetry Console)</h3>
+        <div style="display: flex; gap: 8px;">
+          <button id="btnClearLogs" class="btn" style="padding: 4px 10px; font-size: 0.75rem;">🧹 נקה לוגים</button>
+          <button id="btnCopyDebugConsole" class="btn btn-gold" style="padding: 4px 12px; font-size: 0.78rem;">📋 העתק את כל הלוגים ללוח (Copy All Logs)</button>
+        </div>
+      </div>
+      <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
+        הלוג מתעד את ממדי הסריקה, מיקומי הנקודות, כמות הפיקסלים השחורים, וציוני הגושים עבור כל תמונה שנבדקת.
+      </div>
+      <pre id="debugLogConsole" style="background: #000; color: #38bdf8; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; padding: 12px; border-radius: 6px; max-height: 260px; overflow-y: auto; white-space: pre-wrap; line-height: 1.45; border: 1px solid var(--surface-border); margin-top: 8px; user-select: text;">ממתין להרצת בדיקה... לחצו על תמונה בגלריה או על '🚀 הרץ בדיקה כוללת' כדי להציג נתונים מפורטים.
+      </pre>
+    </section>
   </div>
 
   <script>
@@ -788,6 +805,50 @@
       }
     });
 
+    // --- Centralized Diagnostic Logging System ---
+    const debugLogs = [];
+    const debugLogConsole = document.getElementById('debugLogConsole');
+    const btnClearLogs = document.getElementById('btnClearLogs');
+    const btnCopyDebugConsole = document.getElementById('btnCopyDebugConsole');
+    const btnCopyDebugLogsHeader = document.getElementById('btnCopyDebugLogsHeader');
+
+    function logDebug(msg) {
+      const ts = new Date().toLocaleTimeString('he-IL');
+      const formatted = `[${ts}] ${msg}`;
+      debugLogs.push(formatted);
+      console.log(formatted);
+      if (debugLogConsole) {
+        debugLogConsole.innerText = debugLogs.slice(-300).join('\n');
+        debugLogConsole.scrollTop = debugLogConsole.scrollHeight;
+      }
+    }
+
+    function copyAllLogs() {
+      const fullText = debugLogs.join('\n');
+      if (!fullText || fullText.trim() === '') {
+        alert('אין לוגים להעתקה עדיין. בחרו תמונה או הריצו בדיקה כוללת.');
+        return;
+      }
+      navigator.clipboard.writeText(fullText).then(() => {
+        alert(`הועתקו ${debugLogs.length} שורות לוג ללוח! תוכל כעת להדביק אותן.`);
+      }).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = fullText;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        alert(`הועתקו ${debugLogs.length} שורות לוג ללוח!`);
+      });
+    }
+
+    if (btnCopyDebugConsole) btnCopyDebugConsole.addEventListener('click', copyAllLogs);
+    if (btnCopyDebugLogsHeader) btnCopyDebugLogsHeader.addEventListener('click', copyAllLogs);
+    if (btnClearLogs) btnClearLogs.addEventListener('click', () => {
+      debugLogs.length = 0;
+      if (debugLogConsole) debugLogConsole.innerText = 'הלוג נוקה. מוכן להרצת בדיקות.';
+    });
+
     let currentPhotoRequestId = 0;
 
     async function loadPhoto(imgObj, cardElement) {
@@ -796,6 +857,8 @@
       if (cardElement) cardElement.classList.add('active');
 
       currentImageTitle.innerText = `📸 תצוגת זיהוי: ${imgObj.name} (${imgObj.expected || 'ALIGNED'})`;
+      logDebug(`================================================================`);
+      logDebug(`📸 [IMAGE SELECT] Loading: ${imgObj.name} | Group: ${imgObj.group} | Target: ${imgObj.expected || 'ALIGNED'}`);
 
       const reqId = ++currentPhotoRequestId;
 
@@ -811,6 +874,11 @@
         if (reqId !== currentPhotoRequestId) return; // Another image was selected while detecting
 
         latestLandmarks = landmarks;
+        if (landmarks) {
+          logDebug(`   MediaPipe FaceMesh: Face detected successfully (468 landmarks).`);
+        } else {
+          logDebug(`   ❌ MediaPipe FaceMesh: NO FACE DETECTED in image.`);
+        }
         runAnalysis();
       };
       img.src = imgObj.path;
@@ -853,7 +921,13 @@
 
       // 1. Analyze 3D Geometry via TefillinEngine
       const geometry = TefillinEngine.analyzeFaceGeometry(latestLandmarks, w, h, userHairAdj);
-      if (!geometry) return { status: "NO_FACE", details: "שגיאה בחישוב גיאומטריה" };
+      if (!geometry) {
+        logDebug(`   ❌ Failed to compute 3D face geometry.`);
+        return { status: "NO_FACE", details: "שגיאה בחישוב גיאומטריה" };
+      }
+
+      logDebug(`   Face Geometry: EyeDist=${geometry.eyeDist.toFixed(1)}px | Pitch=${(geometry.pitchAngle * 180 / Math.PI).toFixed(1)}° | MidThird=${geometry.midThirdHeight.toFixed(1)}px | LowerThird=${geometry.lowerThirdHeight.toFixed(1)}px`);
+      logDebug(`   HairlinePt: (${Math.round(geometry.hairlinePt.x)}, ${Math.round(geometry.hairlinePt.y)}) | EyebrowTop: ${Math.round(geometry.eyebrowLevelY)}px | SearchArea: (${geometry.searchArea.x}, ${geometry.searchArea.y}, ${geometry.searchArea.width}x${geometry.searchArea.height})`);
 
       // 2. Segment Dark Tefillin Blobs via TefillinEngine
       const detectionResult = TefillinEngine.detectTefillinBlob(
@@ -861,7 +935,7 @@
         geometry.searchArea,
         geometry.eyeDist,
         geometry.midEyesPt.x,
-        { brightnessThreshold: brightnessThresh, saturationThreshold: saturationThresh, minSizePct }
+        { brightnessThreshold: brightnessThresh, saturationThreshold: saturationThresh, minSizePct, debug: true }
       );
 
       // Render Debug Mask if toggled
@@ -877,6 +951,12 @@
         }
       }
 
+      const blobs = detectionResult ? detectionResult.allBlobs || [] : [];
+      logDebug(`   Dark Pixels: ${detectionResult ? detectionResult.rawDarkCount : 0} | Candidate Blobs Found: ${blobs.length}`);
+      blobs.forEach(b => {
+        logDebug(`     Blob #${b.id}: size=${b.width}x${b.height} (${b.count}px), pos=(${Math.round(b.x)},${Math.round(b.y)}), midOffset=${Math.round(b.distFromMidline)}px, density=${(b.density * 100).toFixed(0)}%, score=${b.totalScore} ${b.rejectReason ? `[REJECT: ${b.rejectReason}]` : '[VALID]'}`);
+      });
+
       const winner = detectionResult ? detectionResult.winner : null;
 
       // 3. Evaluate Halachic Alignment via TefillinEngine
@@ -885,7 +965,14 @@
       // 4. Render Guidelines & Graphical Overlays
       TefillinEngine.renderOverlays(ctx, geometry, alignment, { showGuides: true, showSearchBox: true });
 
-      updateBlobsTable(detectionResult ? detectionResult.allBlobs : [], winner);
+      updateBlobsTable(blobs, winner);
+
+      if (winner) {
+        logDebug(`   ⭐ WINNER: Blob #${winner.id} (${winner.boxWidth}x${winner.boxHeight}px) at (${Math.round(winner.x)}, ${Math.round(winner.y)}) | Score: ${winner.totalScore}`);
+        logDebug(`   🎯 Halachic Verdict: ${alignment.status} | Height above hairline: ${alignment.distAboveHairline}px | Horizontal offset: ${alignment.horizOffset}px | Kosher: ${alignment.isKosher}`);
+      } else {
+        logDebug(`   ❌ NO TEFILLIN WINNER (All candidates rejected or below threshold).`);
+      }
 
       if (!winner) {
         resultBanner.className = "result-banner red";
@@ -962,25 +1049,32 @@
       const samples = getFilteredSamples();
       statTotal.innerText = samples.length;
 
+      logDebug(`================================================================`);
+      logDebug(`🚀 [BULK RUN START] Starting batch evaluation on ${samples.length} images...`);
+
       let passedCount = 0;
       let failedCount = 0;
 
       for (let i = 0; i < samples.length; i++) {
         if (abortBulkTest) {
           lblProgressStatus.innerText = "בדיקה הופסקה.";
+          logDebug(`⚠️ [BULK RUN] Test aborted by user.`);
           break;
         }
 
         const sample = samples[i];
+        const expected = sample.expected || (sample.group === 'WRONG' ? 'FOREHEAD_ERROR' : 'ALIGNED');
         lblProgressStatus.innerText = `בודק ${i + 1} מתוך ${samples.length}: ${sample.name}`;
         const pct = Math.round(((i + 1) / samples.length) * 100);
         bulkProgressBar.style.width = pct + "%";
         lblProgressPercent.innerText = pct + "%";
 
+        logDebug(`----------------------------------------------------------------`);
+        logDebug(`[BULK ${i + 1}/${samples.length}] Testing: ${sample.name} | Target: ${expected}`);
+
         const result = await processSingleImage(sample.path);
         if (abortBulkTest) break;
 
-        const expected = sample.expected || (sample.group === 'WRONG' ? 'FOREHEAD_ERROR' : 'ALIGNED');
         const detected = result.status;
         
         let isMatch = false;
@@ -994,6 +1088,8 @@
 
         if (isMatch) passedCount++;
         else failedCount++;
+
+        logDebug(`   Result: Detected=${detected} (Details: ${result.details}) | ${isMatch ? '🟢 PASS' : '🔴 FAIL (Mismatch)'}`);
 
         const tr = document.createElement('tr');
         tr.className = isMatch ? 'bulk-pass' : 'bulk-fail';
@@ -1028,6 +1124,8 @@
 
       if (!abortBulkTest) {
         lblProgressStatus.innerText = `בדיקה הושלמה! (${passedCount} תואמים מתוך ${samples.length})`;
+        logDebug(`================================================================`);
+        logDebug(`🏁 [BULK RUN COMPLETE] Total: ${samples.length} | Passed: ${passedCount} | Failed: ${failedCount} | Accuracy: ${statAccuracy.innerText}`);
       }
       btnRunBulk.disabled = false;
       btnRunBulk.innerText = "🚀 הרץ בדיקה כוללת (Run Bulk Test)";
