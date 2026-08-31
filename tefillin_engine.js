@@ -373,33 +373,36 @@ const TefillinEngine = (function () {
 
       const scoredBlobs = blobs.map((blob, idx) => {
         const useCentral = blob.hasCentralCore && (blob.width > eyeDist * 0.45 || blob.height > eyeDist * 0.55);
-        
-        // Physical Ketzitzah cube proportional constraints (stops box from bleeding into hair)
+
+        // Physical Ketzitzah + Titura Assembly Proportions (Top-Down Anchor)
         const maxBoxW = Math.max(16, Math.round(eyeDist * 0.48));
-        const maxBoxH = Math.max(16, Math.round(eyeDist * 0.52));
+        const maxBoxH = Math.max(16, Math.round(eyeDist * 0.50));
 
         let finalWidth = useCentral ? blob.centralWidth : blob.width;
-        let finalHeight = useCentral ? blob.centralHeight : blob.height;
         let finalMinX = useCentral ? blob.centralMinX : blob.minX;
         let finalMaxX = useCentral ? blob.centralMaxX : blob.maxX;
-        let finalMinY = useCentral ? blob.centralMinY : blob.minY;
+        let finalMinY = useCentral ? blob.centralMinY : blob.minY; // Top Apex of Ketzitzah
         let finalMaxY = useCentral ? blob.centralMaxY : blob.maxY;
         let finalCount = useCentral ? blob.centralCount : blob.count;
         let finalDensity = useCentral ? blob.centralDensity : blob.density;
         let finalAvgX = useCentral ? blob.centralAvgX : blob.avgX;
-        let finalAvgY = useCentral ? blob.centralAvgY : blob.avgY;
         let finalVar = useCentral ? blob.centralAvgVariance : blob.avgVariance;
 
-        // Strictly constrain box from expanding into top/side hair:
+        // Horizontally bound width to physical Ketzitzah width:
         if (finalWidth > maxBoxW) {
           finalWidth = maxBoxW;
           finalMinX = Math.round(finalAvgX - finalWidth / 2);
           finalMaxX = Math.round(finalAvgX + finalWidth / 2);
         }
+
+        // Vertically anchor at the TOP apex of the Ketzitzah and extend down to the Titura base:
+        let finalHeight = finalMaxY - finalMinY + 1;
         if (finalHeight > maxBoxH) {
           finalHeight = maxBoxH;
-          finalMinY = Math.max(0, finalMaxY - finalHeight);
+          finalMaxY = finalMinY + finalHeight; // Titura Base = Ketzitzah Top + Assembly Height
         }
+
+        const finalAvgY = finalMinY + finalHeight / 2;
 
         const absCenterX = x + finalAvgX;
         const distFromMidline = Math.abs(absCenterX - midX);
