@@ -399,8 +399,12 @@ const TefillinEngine = (function () {
         }
 
         // Refine vertical bounds using sharp gradient edge detection to separate from Kippah/Hair
+        const vPad = 6;
+        const scanMinY = Math.max(0, finalMinY - vPad);
+        const scanMaxY = Math.min(height - 1, finalMaxY + vPad);
+        
         const vProfile = new Int32Array(height);
-        for (let py = finalMinY; py <= finalMaxY; py++) {
+        for (let py = scanMinY; py <= scanMaxY; py++) {
           let count = 0;
           for (let px = finalMinX; px <= finalMaxX; px++) {
             if (rawMask[py * width + px] === 1) count++;
@@ -412,7 +416,9 @@ const TefillinEngine = (function () {
 
         let maxTopDelta = -1;
         let refinedMinY = finalMinY;
-        for (let py = finalMinY + 2; py <= finalMaxY - 2; py++) {
+        // Search top-down, mostly in the upper half to find the Ketzitzah top
+        const searchLimitTop = Math.min(scanMaxY - 2, finalMinY + Math.round(maxBoxH * 0.8));
+        for (let py = scanMinY + 2; py <= searchLimitTop; py++) {
           let above = vProfile[py - 1] + vProfile[py - 2];
           let below = vProfile[py + 1] + vProfile[py + 2];
           if (below - above > maxTopDelta && vProfile[py + 1] > finalWidth * 0.4) {
@@ -423,7 +429,9 @@ const TefillinEngine = (function () {
 
         let maxBottomDelta = -1;
         let refinedMaxY = finalMaxY;
-        for (let py = finalMaxY - 2; py >= finalMinY + 2; py--) {
+        // Search bottom-up, mostly in the lower half to find the Titura base
+        const searchLimitBottom = Math.max(scanMinY + 2, finalMaxY - Math.round(maxBoxH * 0.8));
+        for (let py = scanMaxY - 2; py >= searchLimitBottom; py--) {
           let above = vProfile[py - 1] + vProfile[py - 2];
           let below = vProfile[py + 1] + vProfile[py + 2];
           if (above - below > maxBottomDelta && vProfile[py - 1] > finalWidth * 0.4) {
