@@ -107,7 +107,7 @@ const TefillinEngine = (function () {
     // Search window for Ketzitzah box
     const searchW = Math.round(eyeDist * 1.10);
     const searchX = Math.round(Math.max(0, midEyesPt.x - searchW / 2));
-    const searchY = Math.round(Math.max(0, hairlinePt.y - eyeDist * 1.65));
+    const searchY = Math.round(Math.max(0, hairlinePt.y - eyeDist * 2.5));
     const searchBottom = Math.min(strictForeheadLimitY, Math.round(hairlinePt.y + eyeDist * 0.35));
     const searchH = Math.round(Math.max(25, searchBottom - searchY));
 
@@ -157,17 +157,18 @@ const TefillinEngine = (function () {
         gray[p] = (r * 77 + g * 150 + b * 29) >> 8;
       }
 
-      // 3x3 Local Standard Deviation (Leather is smooth sigma < 12, hair is fibrous sigma > 22)
+      // 3x3 Local Standard Deviation with dilated kernel (scale-aware for upscaled images)
+      const scaleStep = Math.max(1, Math.round(eyeDist * 0.015));
       const textureVar = new Uint8Array(width * height);
-      for (let py = 1; py < height - 1; py++) {
+      for (let py = scaleStep; py < height - scaleStep; py++) {
         const rowOffset = py * width;
-        for (let px = 1; px < width - 1; px++) {
+        for (let px = scaleStep; px < width - scaleStep; px++) {
           const idx = rowOffset + px;
           let sum = 0, sumSq = 0;
           for (let dy = -1; dy <= 1; dy++) {
-            const rOff = (py + dy) * width;
+            const rOff = (py + dy * scaleStep) * width;
             for (let dx = -1; dx <= 1; dx++) {
-              const v = gray[rOff + px + dx];
+              const v = gray[rOff + px + dx * scaleStep];
               sum += v;
               sumSq += v * v;
             }
@@ -190,7 +191,8 @@ const TefillinEngine = (function () {
         const satDiff = Math.max(r, g, b) - Math.min(r, g, b);
 
         // Core black criteria: dark & low color saturation (rejects skin & colored garments)
-        if (brightness < brightnessThresh && satDiff < saturationThresh) {
+        // We also enforce textureVar < 35 to reject fibrous hair while keeping leather (even with grooves).
+        if (brightness < brightnessThresh && satDiff < saturationThresh && textureVar[p] < 35) {
           rawMask[p] = 1;
           rawDarkCount++;
         }
@@ -200,22 +202,23 @@ const TefillinEngine = (function () {
         return { allBlobs: [], winner: null, maskData: rawMask, rawDarkCount };
       }
 
-      // 2px morphological dilation (bridges leather specular glints and compartment seams)
+      // Morphological dilation (bridges scaled texture halos and compartment seams)
       const mask = new Uint8Array(width * height);
+      const dilateR = Math.max(2, scaleStep + 1);
+      
       for (let py = 0; py < height; py++) {
-        const rowOffset = py * width;
         for (let px = 0; px < width; px++) {
-          const idx = rowOffset + px;
-          if (rawMask[idx] === 1) {
-            mask[idx] = 1;
-            if (px > 0) mask[idx - 1] = 1;
-            if (px < width - 1) mask[idx + 1] = 1;
-            if (py > 0) mask[idx - width] = 1;
-            if (py < height - 1) mask[idx + width] = 1;
-            if (px > 1) mask[idx - 2] = 1;
-            if (px < width - 2) mask[idx + 2] = 1;
-            if (py > 1) mask[idx - width * 2] = 1;
-            if (py < height - 2) mask[idx + width * 2] = 1;
+          if (rawMask[py * width + px] === 1) {
+            const startY = Math.max(0, py - dilateR);
+            const endY = Math.min(height - 1, py + dilateR);
+            const startX = Math.max(0, px - dilateR);
+            const endX = Math.min(width - 1, px + dilateR);
+            for (let ny = startY; ny <= endY; ny++) {
+              const row = ny * width;
+              for (let nx = startX; nx <= endX; nx++) {
+                mask[row + nx] = 1;
+              }
+            }
           }
         }
       }
@@ -242,10 +245,10 @@ const TefillinEngine = (function () {
 
       let snappedLeft = searchLeft;
       let snappedRight = searchRight;
-      for (let px = Math.round(relMidX); px >= 0; px--) {
+      for (let px = Math.round(relMidX); px >= searchLeft; px--) {
         if (colDarkSum[px] < valleyThreshold) { snappedLeft = px + 1; break; }
       }
-      for (let px = Math.round(relMidX); px < width; px++) {
+      for (let px = Math.round(relMidX); px <= searchRight; px++) {
         if (colDarkSum[px] < valleyThreshold) { snappedRight = px - 1; break; }
       }
       if (snappedLeft >= snappedRight) { snappedLeft = searchLeft; snappedRight = searchRight; }
@@ -395,11 +398,11 @@ const TefillinEngine = (function () {
           finalMaxX = Math.round(finalAvgX + finalWidth / 2);
         }
 
-        // Vertically anchor at the TOP apex of the Ketzitzah and extend down to the Titura base:
+        // Vertically anchor at the BOTTOM apex of the Titura and extend up to the Ketzitzah top:
         let finalHeight = finalMaxY - finalMinY + 1;
         if (finalHeight > maxBoxH) {
           finalHeight = maxBoxH;
-          finalMaxY = finalMinY + finalHeight; // Titura Base = Ketzitzah Top + Assembly Height
+          finalMinY = finalMaxY - finalHeight; // Ketzitzah Top = Titura Base - Assembly Height
         }
 
         const finalAvgY = finalMinY + finalHeight / 2;
