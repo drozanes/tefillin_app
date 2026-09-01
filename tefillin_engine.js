@@ -191,8 +191,8 @@ const TefillinEngine = (function () {
         const satDiff = Math.max(r, g, b) - Math.min(r, g, b);
 
         // Core black criteria: dark & low color saturation (rejects skin & colored garments)
-        // We also enforce textureVar < 35 to reject fibrous hair while keeping leather (even with grooves).
-        if (brightness < brightnessThresh && satDiff < saturationThresh && textureVar[p] < 35) {
+        // We also enforce textureVar < 18 to reject fibrous hair while keeping leather (even with grooves).
+        if (brightness < brightnessThresh && satDiff < saturationThresh && textureVar[p] < 18) {
           rawMask[p] = 1;
           rawDarkCount++;
         }
@@ -398,11 +398,49 @@ const TefillinEngine = (function () {
           finalMaxX = Math.round(finalAvgX + finalWidth / 2);
         }
 
-        // Vertically anchor at the BOTTOM apex of the Titura and extend up to the Ketzitzah top:
+        // Refine vertical bounds using sharp gradient edge detection to separate from Kippah/Hair
+        const vProfile = new Int32Array(height);
+        for (let py = finalMinY; py <= finalMaxY; py++) {
+          let count = 0;
+          for (let px = finalMinX; px <= finalMaxX; px++) {
+            if (rawMask[py * width + px] === 1) count++;
+          }
+          vProfile[py] = count;
+        }
+
+        const edgeThresh = Math.max(3, finalWidth * 0.3); // Minimum delta to be a real edge
+
+        let maxTopDelta = -1;
+        let refinedMinY = finalMinY;
+        for (let py = finalMinY + 2; py <= finalMaxY - 2; py++) {
+          let above = vProfile[py - 1] + vProfile[py - 2];
+          let below = vProfile[py + 1] + vProfile[py + 2];
+          if (below - above > maxTopDelta && vProfile[py + 1] > finalWidth * 0.4) {
+            maxTopDelta = below - above;
+            refinedMinY = py;
+          }
+        }
+
+        let maxBottomDelta = -1;
+        let refinedMaxY = finalMaxY;
+        for (let py = finalMaxY - 2; py >= finalMinY + 2; py--) {
+          let above = vProfile[py - 1] + vProfile[py - 2];
+          let below = vProfile[py + 1] + vProfile[py + 2];
+          if (above - below > maxBottomDelta && vProfile[py - 1] > finalWidth * 0.4) {
+            maxBottomDelta = above - below;
+            refinedMaxY = py;
+          }
+        }
+
+        if (maxTopDelta > edgeThresh) finalMinY = refinedMinY;
+        if (maxBottomDelta > edgeThresh) finalMaxY = refinedMaxY;
+
         let finalHeight = finalMaxY - finalMinY + 1;
-        if (finalHeight > maxBoxH) {
-          finalHeight = maxBoxH;
-          finalMinY = finalMaxY - finalHeight; // Ketzitzah Top = Titura Base - Assembly Height
+        
+        // Safety fallback if height is wildly large
+        if (finalHeight > maxBoxH * 1.35) {
+          finalHeight = Math.round(maxBoxH);
+          finalMaxY = finalMinY + finalHeight;
         }
 
         const finalAvgY = finalMinY + finalHeight / 2;
