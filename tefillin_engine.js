@@ -545,21 +545,53 @@ const TefillinEngine = (function () {
     const isEntirelyOnScalp = distAboveHairline >= -foreheadTolerance;
 
     // Horizontal offset from middle of eyes
-    const tefillinVec = { x: winner.x - midEyesPt.x, y: winner.y - midEyesPt.y };
-    const horizOffsetLocal = (tefillinVec.x * uEye.x + tefillinVec.y * uEye.y);
+    // FIX: Using the vector from Glabella to MeshTop (which lies on the forehead surface) 
+    // is much more robust to 3D Head Yaw than the MidEyes point (which is deep in the skull).
+    const A = geometry.glabellaPt;
+    const B = geometry.meshTopPt;
+    const P = { x: winner.x, y: winner.y };
+    // Perpendicular distance from point P to line AB
+    const lineLen = Math.hypot(B.x - A.x, B.y - A.y);
+    let horizOffsetLocal = 0;
+    if (lineLen > 0.1) {
+      // Cross product gives perpendicular distance. 
+      // Sign indicates left/right. 
+      horizOffsetLocal = ((B.x - A.x) * (A.y - P.y) - (B.y - A.y) * (A.x - P.x)) / lineLen;
+    }
     const isCentered = Math.abs(horizOffsetLocal) < (eyeDist * 0.18);
 
     let status = 'ALIGNED';
+    let warning = false;
+    let direction = '';
+
     if (!isEntirelyOnScalp) {
       status = 'FOREHEAD_ERROR';
+      direction = '⬆️ משוך למעלה'; // Pull UP
     } else if (!isCentered) {
       status = 'OFF_CENTER';
+      // If horizOffsetLocal is positive, tefillin is to the user's Left (our Right). Move Right (user's Right).
+      // Wait, let's trace coordinates. uEye points from user-Right-eye to user-Left-eye (left-to-right on screen).
+      // If horizOffsetLocal > 0, P is on the right side of the screen (user's Left). User needs to move it to their Right.
+      if (horizOffsetLocal > 0) {
+        direction = '⬅️ הזז ימינה (שלך)'; // Move to User's Right (Screen Left)
+      } else {
+        direction = '➡️ הזז שמאלה (שלך)'; // Move to User's Left (Screen Right)
+      }
     } else {
       status = 'ALIGNED';
+      // If it's kosher but very close to the edge (less than 6px from borderline)
+      if (distAboveHairline < 6) {
+        warning = true;
+        direction = '⚠️ גבולי (קרוב למצח)';
+      } else {
+        direction = '✅ מצוין';
+      }
     }
 
     return {
       status,
+      warning,
+      direction,
       isKosher: isEntirelyOnScalp,
       isCentered,
       distAboveHairline: Math.round(distAboveHairline),
@@ -574,7 +606,7 @@ const TefillinEngine = (function () {
   function renderOverlays(ctx, geometry, alignmentResult, options = {}) {
     if (!ctx || !geometry) return;
 
-    const { midEyesPt, hairlinePt, uUp, uEye, eyeDist, searchArea } = geometry;
+    const { midEyesPt, hairlinePt, uUp, uEye, eyeDist, searchArea, glabellaPt, meshTopPt } = geometry;
     const { status, winner } = alignmentResult || {};
 
     // Search bounding box
@@ -587,8 +619,10 @@ const TefillinEngine = (function () {
     // Gold symmetry centerline
     if (options.showGuides !== false) {
       ctx.beginPath();
-      ctx.moveTo(midEyesPt.x - uUp.x * 300, midEyesPt.y - uUp.y * 300);
-      ctx.lineTo(midEyesPt.x + uUp.x * 300, midEyesPt.y + uUp.y * 300);
+      // Draw true surface midline (Glabella to MeshTop)
+      const midlineVec = { x: meshTopPt.x - glabellaPt.x, y: meshTopPt.y - glabellaPt.y };
+      ctx.moveTo(glabellaPt.x - midlineVec.x * 2, glabellaPt.y - midlineVec.y * 2);
+      ctx.lineTo(meshTopPt.x + midlineVec.x * 0.5, meshTopPt.y + midlineVec.y * 0.5);
       ctx.strokeStyle = "rgba(251, 191, 36, 0.85)";
       ctx.lineWidth = 2;
       ctx.setLineDash([5, 4]);
@@ -607,23 +641,33 @@ const TefillinEngine = (function () {
     // Draw detected Tefillin box & lowest edge indicator
     if (winner && options.showGuides !== false) {
       const strokeColor = (status === 'FOREHEAD_ERROR') ? '#ef4444' : '#22c55e';
+      
+      // Calculate roll angle for rotated bounding box
+      const rollAngle = Math.atan2(uEye.y, uEye.x);
+
+      ctx.save();
+      ctx.translate(winner.x, winner.y);
+      ctx.rotate(rollAngle);
 
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 3;
-      ctx.strokeRect(winner.leftX, winner.topY, winner.boxWidth, winner.boxHeight);
+      // Draw box centered at 0,0 
+      ctx.strokeRect(-winner.boxWidth / 2, -winner.boxHeight / 2, winner.boxWidth, winner.boxHeight);
 
       // Prominent lowest edge line
       ctx.beginPath();
-      ctx.moveTo(winner.leftX - 4, winner.bottomY);
-      ctx.lineTo(winner.rightX + 4, winner.bottomY);
+      ctx.moveTo(-winner.boxWidth / 2 - 4, winner.boxHeight / 2);
+      ctx.lineTo(winner.boxWidth / 2 + 4, winner.boxHeight / 2);
       ctx.lineWidth = 4;
       ctx.stroke();
 
       // Center dot
       ctx.beginPath();
-      ctx.arc(winner.x, winner.y, 5, 0, Math.PI * 2);
+      ctx.arc(0, 0, 5, 0, Math.PI * 2);
       ctx.fillStyle = strokeColor;
       ctx.fill();
+      
+      ctx.restore();
     }
   }
 

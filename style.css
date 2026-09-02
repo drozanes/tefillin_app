@@ -507,3 +507,12 @@ body {
   color: var(--text-subtle);
   border-top: 1px solid var(--border-color);
 }
+.status-indicator-dot.caution {
+  background: var(--accent-gold);
+  box-shadow: 0 0 10px var(--accent-gold-glow);
+}
+.guidance-card.caution {
+  border-color: var(--accent-gold);
+  background: rgba(146, 108, 21, 0.9);
+  box-shadow: 0 0 20px var(--accent-gold-glow);
+}

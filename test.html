@@ -996,13 +996,16 @@
 
       if (!isKosher) {
         resultBanner.className = "result-banner red";
-        resultText.innerText = `❌ פסול! קצה התפילין נוגע במצח (${Math.abs(distAboveHairline)}px מתחת לקו השיער)`;
-      } else if (isCentered) {
+        resultText.innerHTML = `❌ פסול! קצה התפילין נוגע במצח (${Math.abs(distAboveHairline)}px מתחת לקו השיער) <br> <a href="https://www.youtube.com/watch?v=4BEhw4g_OJI" target="_blank" style="color: #fff; text-decoration: underline; font-weight: bold;">מדריך וידאו: איך להקטין את הקשר של התפילין</a>`;
+      } else if (alignment.status === 'OFF_CENTER') {
+        resultBanner.className = "result-banner yellow";
+        resultText.innerText = `⚠️ במקום שיער אך יש לכוון לאמצע (${alignment.direction}) (סטייה ${Math.round(horizOffset)}px)`;
+      } else if (alignment.warning) {
+        resultBanner.className = "result-banner yellow";
+        resultText.innerText = `⚠️ גבולי - במקום שיער אך צמוד מאוד לגבול התחתון (${distAboveHairline}px מעל מצח)`;
+      } else {
         resultBanner.className = "result-banner green";
         resultText.innerText = `✨ התפילין מונחות כהלכה! (ממורכז + ${distAboveHairline}px במקום שיער)`;
-      } else {
-        resultBanner.className = "result-banner yellow";
-        resultText.innerText = `⚠️ במקום שיער אך יש לכוון לאמצע (סטייה ${Math.round(horizOffset)}px)`;
       }
 
       resultScore.innerText = `${status} (${winner.boxWidth}x${winner.boxHeight}px)`;

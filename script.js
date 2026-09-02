@@ -282,51 +282,41 @@ function onFaceResults(results) {
     horizStatus.innerText = isCentered ? lang.centerStatusOk : lang.centerStatusOff;
     horizStatus.style.color = isCentered ? "var(--accent-green)" : "var(--accent-gold)";
 
-    // 6. MIRROR-AWARE LEFT / RIGHT DIRECTIONS
-    let needMoveRight = false;
-    let needMoveLeft = false;
-
-    if (!isCentered) {
-      if (state.isMirrored) {
-        if (horizOffset > 0) needMoveRight = true;
-        else needMoveLeft = true;
-      } else {
-        if (horizOffset > 0) needMoveLeft = true;
-        else needMoveRight = true;
-      }
-    }
-
-    // 7. FINAL STATE SELECTION
+    // 6. FINAL STATE SELECTION
     if (!isKosher) {
       // LOWEST EDGE TOUCHES FOREHEAD -> RED ALERT
       statusDot.className = "status-indicator-dot misaligned";
       statusText.innerText = lang.foreheadWarning;
       guidanceCard.className = "guidance-card warning";
       directionArrow.innerText = "⬆️";
-      guidanceTitle.innerText = lang.moveUp;
-      guidanceSub.innerText = "הקצה התחתון של התפילין נוגע במצח! יש להרים אל מקום השיער.";
-    } else if (isCentered) {
-      // PERFECT ALIGNMENT
+      guidanceTitle.innerText = "פסול: נוגע במצח";
+      guidanceSub.innerHTML = `הקצה התחתון של התפילין נוגע במצח! יש להרים אל מקום השיער. <br><a href="https://www.youtube.com/watch?v=4BEhw4g_OJI" target="_blank" style="color: #ffbba6; text-decoration: underline; margin-top: 8px; display: inline-block;">🎥 מדריך: איך להקטין את הקשר</a>`;
+    } else if (alignment.status === 'OFF_CENTER') {
+      // OFF CENTER -> YELLOW ALERT
+      statusDot.className = "status-indicator-dot caution";
+      statusText.innerText = "לא ממורכז";
+      guidanceCard.className = "guidance-card caution";
+      // Split the direction string to get emoji and text
+      const parts = alignment.direction.split(' ');
+      directionArrow.innerText = parts[0];
+      guidanceTitle.innerText = "יש למרכז";
+      guidanceSub.innerText = alignment.direction;
+    } else if (alignment.warning) {
+      // BORDERLINE KOSHER -> YELLOW ALERT
+      statusDot.className = "status-indicator-dot caution";
+      statusText.innerText = "גבולי";
+      guidanceCard.className = "guidance-card caution";
+      directionArrow.innerText = "⚠️";
+      guidanceTitle.innerText = "קרוב מאוד למצח";
+      guidanceSub.innerText = "התפילין במקום שיער אך קרובות מאוד לגבול.";
+    } else {
+      // PERFECT ALIGNMENT -> GREEN
       statusDot.className = "status-indicator-dot aligned";
       statusText.innerText = lang.perfect;
       guidanceCard.className = "guidance-card aligned";
       directionArrow.innerText = "✨";
       guidanceTitle.innerText = lang.perfect;
       guidanceSub.innerText = lang.perfectSub;
-    } else if (needMoveLeft) {
-      statusDot.className = "status-indicator-dot misaligned";
-      statusText.innerText = lang.moveLeft;
-      guidanceCard.className = "guidance-card warning";
-      directionArrow.innerText = "⬅️";
-      guidanceTitle.innerText = lang.moveLeft;
-      guidanceSub.innerText = "הזיזו את קציצת התפילין לכיוון שמאל שלכם";
-    } else if (needMoveRight) {
-      statusDot.className = "status-indicator-dot misaligned";
-      statusText.innerText = lang.moveRight;
-      guidanceCard.className = "guidance-card warning";
-      directionArrow.innerText = "➡️";
-      guidanceTitle.innerText = lang.moveRight;
-      guidanceSub.innerText = "הזיזו את קציצת התפילין לכיוון ימין שלכם";
     }
   }
 
