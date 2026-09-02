@@ -409,6 +409,7 @@
         </p>
       </div>
       <div style="display: flex; gap: 8px;">
+        <button id="btnUpdateSamples" class="btn btn-primary" title="Update the image bundle from the samples folder">🔄 עדכן תמונות (Update Samples)</button>
         <button id="btnRunBulk" class="btn btn-gold">🚀 הרץ בדיקה כוללת (Run Bulk Test)</button>
         <button id="btnCopyDebugLogsHeader" class="btn" style="background: rgba(56, 189, 248, 0.2); border: 1px solid var(--accent-cyan); color: var(--accent-cyan);" title="העתק לוגים מפורטים של כל הבדיקות ללוח">📋 העתק לוגים (Copy Logs)</button>
         <button id="btnExportConfig" class="btn" title="הורד/העתק תוצאות צפויות">💾 שמור תוצאות רצויות</button>
@@ -610,6 +611,7 @@
     const allTabBtns = [tabOK, tabWrong, tabCropped, tabRoot, tabAll];
     const lblSampleCount = document.getElementById('lblSampleCount');
 
+    const btnUpdateSamples = document.getElementById('btnUpdateSamples');
     const btnRunBulk = document.getElementById('btnRunBulk');
     const btnExportConfig = document.getElementById('btnExportConfig');
     const bulkTablePanel = document.getElementById('bulkTablePanel');
@@ -1188,6 +1190,27 @@
         window.scrollTo({ top: document.querySelector('.workspace-grid').offsetTop - 20, behavior: 'smooth' });
       }
     };
+
+    btnUpdateSamples.addEventListener('click', async () => {
+      btnUpdateSamples.disabled = true;
+      const originalText = btnUpdateSamples.innerText;
+      btnUpdateSamples.innerText = "⏳ Updating...";
+      try {
+        const response = await fetch('/generate', { method: 'POST' });
+        if (response.ok) {
+          alert("Samples updated! The page will now reload.");
+          window.location.reload();
+        } else {
+          const data = await response.json();
+          alert("Error updating samples: " + (data.error || "Unknown error"));
+        }
+      } catch (err) {
+        alert("Failed to connect to the custom server. Are you running 'python3 server.py'?");
+      } finally {
+        btnUpdateSamples.disabled = false;
+        btnUpdateSamples.innerText = originalText;
+      }
+    });
 
     btnRunBulk.addEventListener('click', runBulkTest);
 
