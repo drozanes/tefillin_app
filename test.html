@@ -502,9 +502,14 @@
       <div class="panel">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <h3 id="currentImageTitle">📸 תצוגת זיהוי וקווי הלכה</h3>
-          <label style="font-size: 0.78rem; color: var(--accent-cyan); cursor: pointer;">
-            <input type="checkbox" id="showMaskToggle"> הצג מסכת פיקסלים שחורים (Debug Mask)
-          </label>
+          <div style="display: flex; gap: 12px;">
+            <label style="font-size: 0.78rem; color: var(--accent-gold); cursor: pointer;">
+              <input type="checkbox" id="showGuidesToggle" checked> הצג קווי עזר (Guides)
+            </label>
+            <label style="font-size: 0.78rem; color: var(--accent-cyan); cursor: pointer;">
+              <input type="checkbox" id="showMaskToggle"> הצג מסכת פיקסלים (Mask)
+            </label>
+          </div>
         </div>
 
         <div class="canvas-container">
@@ -898,6 +903,9 @@
       });
     });
 
+    document.getElementById('showGuidesToggle').addEventListener('change', runAnalysis);
+    document.getElementById('showMaskToggle').addEventListener('change', runAnalysis);
+
     /**
      * Exact Computer Vision Engine Execution on Static Photo via TefillinEngine
      */
@@ -965,7 +973,8 @@
       const alignment = TefillinEngine.evaluateAlignment(winner, geometry);
 
       // 4. Render Guidelines & Graphical Overlays
-      TefillinEngine.renderOverlays(ctx, geometry, alignment, { showGuides: true, showSearchBox: true });
+      const showGuides = document.getElementById('showGuidesToggle').checked;
+      TefillinEngine.renderOverlays(ctx, geometry, alignment, { showGuides: showGuides, showSearchBox: showGuides });
 
       updateBlobsTable(blobs, winner);
 
