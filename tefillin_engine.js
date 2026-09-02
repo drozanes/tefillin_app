@@ -605,7 +605,7 @@ const TefillinEngine = (function () {
     }
 
     // Draw detected Tefillin box & lowest edge indicator
-    if (winner) {
+    if (winner && options.showGuides !== false) {
       const strokeColor = (status === 'FOREHEAD_ERROR') ? '#ef4444' : '#22c55e';
 
       ctx.strokeStyle = strokeColor;
