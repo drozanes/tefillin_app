@@ -91,13 +91,28 @@ const YoloEngine = (function() {
 
     async function detect(canvas) {
         if (!session) return null;
+        
+        const startPre = performance.now();
         const { tensor, scale, padX, padY } = preprocess(canvas);
+        const endPre = performance.now();
+        
         const feeds = {};
         feeds[session.inputNames[0]] = tensor;
         
+        const startInf = performance.now();
         const results = await session.run(feeds);
+        const endInf = performance.now();
+        
         const outputTensor = results[session.outputNames[0]];
-        return postprocess(outputTensor, scale, padX, padY);
+        const finalBox = postprocess(outputTensor, scale, padX, padY);
+        
+        // Log to console so user can verify speed and GPU usage via USB debugging
+        // We throttle the log to avoid console spam
+        if (Math.random() < 0.05) {
+            console.log(`[YOLO Profiler] Preprocess: ${(endPre - startPre).toFixed(1)}ms | Inference: ${(endInf - startInf).toFixed(1)}ms | Provider: ${session.executionProviders[0].name || 'unknown'}`);
+        }
+        
+        return finalBox;
     }
 
     return {
