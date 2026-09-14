@@ -911,7 +911,7 @@
     /**
      * Exact Computer Vision Engine Execution on Static Photo via TefillinEngine
      */
-    function runAnalysis() {
+    async function runAnalysis() {
       if (!currentImageElement) return;
 
       TefillinEngine.prepareCanvasForImage(currentImageElement, canvas, 540);
