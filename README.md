@@ -51,3 +51,6 @@ tefillin_app/
 ├── .gitignore            # Git ignore rules (keeps private sample datasets local)
 └── README.md             # Project overview & documentation
 ```
+
+## 🤖 AI Powered
+This application now uses a Deep Learning YOLOv8 model running via ONNX Runtime Web to detect the Tefillin in real-time on the client side.
