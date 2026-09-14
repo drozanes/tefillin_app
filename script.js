@@ -204,7 +204,7 @@ async function initCamera() {
   }
 }
 
-function onFaceResults(results) {
+async function onFaceResults(results) {
   canvas.width = webcam.videoWidth || 640;
   canvas.height = webcam.videoHeight || 480;
 
@@ -235,9 +235,8 @@ function onFaceResults(results) {
   const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, w, h, state.hairlineUserAdjustment);
   if (!geometry) { ctx.restore(); return; }
 
-  // 2. Segment Dark Tefillin Ketzitzah Blob via TefillinEngine
-  const detectionResult = TefillinEngine.detectTefillinBlob(ctx, geometry.searchArea, geometry.eyeDist, geometry.midEyesPt.x);
-  const winner = detectionResult ? detectionResult.winner : null;
+  // 2. AI Detect Tefillin Ketzitzah via YOLO ONNX Model
+  const winner = await YoloEngine.detect(canvas);
 
   // 3. Evaluate Halachic Alignment Status
   const alignment = TefillinEngine.evaluateAlignment(winner, geometry);
@@ -323,9 +322,10 @@ function onFaceResults(results) {
   ctx.restore();
 }
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   updateUIStrings();
   webcam.classList.toggle('mirrored', state.isMirrored);
   canvas.classList.toggle('mirrored', state.isMirrored);
+  await YoloEngine.loadModel();
   initCamera();
 });

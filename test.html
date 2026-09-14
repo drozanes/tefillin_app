@@ -13,7 +13,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
-  <!-- Shared Tefillin Algorithm Engine -->
+  <!-- Application Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <script src="yolo_engine.js"></script>
   <script src="tefillin_engine.js"></script>
 
   <!-- Local Base64 Samples & Ground Truth Data -->
@@ -925,9 +927,6 @@
       }
 
       const userHairAdj = parseFloat(sliderHairlineOffset.value);
-      const brightnessThresh = parseInt(sliderBrightness.value);
-      const saturationThresh = parseInt(sliderSaturation.value);
-      const minSizePct = parseInt(sliderMinSize.value) / 100;
 
       // 1. Analyze 3D Geometry via TefillinEngine
       const geometry = TefillinEngine.analyzeFaceGeometry(latestLandmarks, w, h, userHairAdj);
@@ -939,35 +938,8 @@
       logDebug(`   Face Geometry: EyeDist=${geometry.eyeDist.toFixed(1)}px | Pitch=${(geometry.pitchAngle * 180 / Math.PI).toFixed(1)}° | MidThird=${geometry.midThirdHeight.toFixed(1)}px | LowerThird=${geometry.lowerThirdHeight.toFixed(1)}px`);
       logDebug(`   HairlinePt: (${Math.round(geometry.hairlinePt.x)}, ${Math.round(geometry.hairlinePt.y)}) | EyebrowTop: ${Math.round(geometry.eyebrowLevelY)}px | SearchArea: (${geometry.searchArea.x}, ${geometry.searchArea.y}, ${geometry.searchArea.width}x${geometry.searchArea.height})`);
 
-      // 2. Segment Dark Tefillin Blobs via TefillinEngine
-      const detectionResult = TefillinEngine.detectTefillinBlob(
-        ctx,
-        geometry.searchArea,
-        geometry.eyeDist,
-        geometry.midEyesPt.x,
-        { brightnessThreshold: brightnessThresh, saturationThreshold: saturationThresh, minSizePct, debug: true }
-      );
-
-      // Render Debug Mask if toggled
-      if (showMaskToggle.checked && detectionResult && detectionResult.maskData) {
-        ctx.fillStyle = "rgba(56, 189, 248, 0.45)";
-        const { x, y, width, height } = geometry.searchArea;
-        for (let py = 0; py < height; py++) {
-          for (let px = 0; px < width; px++) {
-            if (detectionResult.maskData[py * width + px] === 1) {
-              ctx.fillRect(x + px, y + py, 1, 1);
-            }
-          }
-        }
-      }
-
-      const blobs = detectionResult ? detectionResult.allBlobs || [] : [];
-      logDebug(`   Dark Pixels: ${detectionResult ? detectionResult.rawDarkCount : 0} | Candidate Blobs Found: ${blobs.length}`);
-      blobs.forEach(b => {
-        logDebug(`     Blob #${b.id}: size=${b.width}x${b.height} (${b.count}px), pos=(${Math.round(b.x)},${Math.round(b.y)}), midOffset=${Math.round(b.distFromMidline)}px, density=${(b.density * 100).toFixed(0)}%, score=${b.totalScore} ${b.rejectReason ? `[REJECT: ${b.rejectReason}]` : '[VALID]'}`);
-      });
-
-      const winner = detectionResult ? detectionResult.winner : null;
+      // 2. AI Detect Tefillin Ketzitzah via YOLO ONNX Model
+      const winner = await YoloEngine.detect(canvas);
 
       // 3. Evaluate Halachic Alignment via TefillinEngine
       const alignment = TefillinEngine.evaluateAlignment(winner, geometry);
@@ -976,13 +948,11 @@
       const showGuides = document.getElementById('showGuidesToggle').checked;
       TefillinEngine.renderOverlays(ctx, geometry, alignment, { showGuides: showGuides, showSearchBox: showGuides });
 
-      updateBlobsTable(blobs, winner);
-
       if (winner) {
-        logDebug(`   ⭐ WINNER: Blob #${winner.id} (${winner.boxWidth}x${winner.boxHeight}px) at (${Math.round(winner.x)}, ${Math.round(winner.y)}) | Score: ${winner.totalScore}`);
+        logDebug(`   ⭐ YOLO WINNER: (${winner.boxWidth}x${winner.boxHeight}px) at (${Math.round(winner.x)}, ${Math.round(winner.y)}) | Confidence: ${(winner.confidence*100).toFixed(1)}%`);
         logDebug(`   🎯 Halachic Verdict: ${alignment.status} | Height above hairline: ${alignment.distAboveHairline}px | Horizontal offset: ${alignment.horizOffset}px | Kosher: ${alignment.isKosher}`);
       } else {
-        logDebug(`   ❌ NO TEFILLIN WINNER (All candidates rejected or below threshold).`);
+        logDebug(`   ❌ NO TEFILLIN DETECTED BY YOLO.`);
       }
 
       if (!winner) {
@@ -1172,15 +1142,7 @@
             return;
           }
 
-          const detectionResult = TefillinEngine.detectTefillinBlob(
-            tempCtx,
-            geometry.searchArea,
-            geometry.eyeDist,
-            geometry.midEyesPt.x,
-            { brightnessThreshold: brightnessThresh, saturationThreshold: saturationThresh, minSizePct }
-          );
-
-          const winner = detectionResult ? detectionResult.winner : null;
+          const winner = await YoloEngine.detect(tempCanvas);
           const alignment = TefillinEngine.evaluateAlignment(winner, geometry);
 
           resolve({
@@ -1240,7 +1202,8 @@
     });
 
     // Auto-load first sample on load
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
+      await YoloEngine.loadModel();
       renderGallery();
       const samples = getFilteredSamples();
       if (samples.length > 0) {
