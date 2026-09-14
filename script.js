@@ -235,8 +235,25 @@ async function onFaceResults(results) {
   const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, w, h, state.hairlineUserAdjustment);
   if (!geometry) { ctx.restore(); return; }
 
-  // 2. AI Detect Tefillin Ketzitzah via YOLO ONNX Model
-  const winner = await YoloEngine.detect(canvas);
+  // 2. AI Detect Tefillin Ketzitzah via YOLO ONNX Model (DECOUPLED FOR SILKY SMOOTH FPS)
+  if (!window.isYoloRunning) {
+    window.isYoloRunning = true;
+    
+    // Clone the current frame so the async YOLO doesn't read the NEXT frame's pixels midway
+    const offscreenCanvas = document.createElement('canvas');
+    offscreenCanvas.width = w;
+    offscreenCanvas.height = h;
+    offscreenCanvas.getContext('2d', { willReadFrequently: true }).drawImage(canvas, 0, 0);
+
+    YoloEngine.detect(offscreenCanvas).then(box => {
+      window.lastYoloBox = box;
+      window.isYoloRunning = false;
+    }).catch(err => {
+      console.error("YOLO Error:", err);
+      window.isYoloRunning = false;
+    });
+  }
+  const winner = window.lastYoloBox || null;
 
   // 3. Evaluate Halachic Alignment Status
   const alignment = TefillinEngine.evaluateAlignment(winner, geometry);
