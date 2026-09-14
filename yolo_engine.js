@@ -6,8 +6,10 @@ const YoloEngine = (function() {
     async function loadModel() {
         if (!session) {
             console.log("Loading YOLO ONNX model...");
-            // ONNX Runtime Web is expected to be loaded globally as `ort`
-            session = await ort.InferenceSession.create('models/best.onnx', { executionProviders: ['wasm'] });
+            // Use hardware acceleration (WebGPU / WebGL) for massive speedup on mobile
+            session = await ort.InferenceSession.create('models/best.onnx', { 
+                executionProviders: ['webgpu', 'webgl', 'wasm'] 
+            });
             console.log("YOLO model loaded!");
         }
         return session;
