@@ -540,9 +540,11 @@ const TefillinEngine = (function () {
 
     // Positive = Lowest edge is ABOVE hairline on scalp (Kosher).
     // Negative = Lowest edge is BELOW hairline on forehead skin (Passul).
+    
+    // We remove the artificial tolerance so the app is 100% mathematically strict.
+    // If it is even 1 pixel below the FaceMesh hairline, it fails.
     const distAboveHairline = (lowestEdgeVector.x * uUp.x + lowestEdgeVector.y * uUp.y);
-    const foreheadTolerance = Math.max(5, Math.round(eyeDist * 0.04));
-    const isEntirelyOnScalp = distAboveHairline >= -foreheadTolerance;
+    const isEntirelyOnScalp = distAboveHairline >= 0;
 
     // Horizontal offset from middle of eyes
     // FIX: Using the vector from Glabella to MeshTop (which lies on the forehead surface) 
@@ -579,8 +581,8 @@ const TefillinEngine = (function () {
       }
     } else {
       status = 'ALIGNED';
-      // If it's kosher but very close to the edge (less than 6px from borderline)
-      if (distAboveHairline < 6) {
+      // If it's kosher but very close to the edge (less than eyeDist * 0.04)
+      if (distAboveHairline < (eyeDist * 0.04)) {
         warning = true;
         direction = '⚠️ גבולי (קרוב למצח)';
       } else {
