@@ -48,19 +48,52 @@ const TefillinEngine = (function () {
     const dy = (meshTopPt.y - nosePt.y);
     const pitchAngle = Math.atan2(dz, Math.abs(dy));
     const pitchCompression = Math.max(0.7, Math.cos(pitchAngle));
-
-    // The most robust way to find the anatomical hairline (Trichion) regardless of extreme
-    // camera perspectives (like looking up from the chest) is to simply trust Google's 
-    // 3D FaceMesh landmark #10, which represents the top center edge of the forehead mesh.
-    // The previous manual geometry math failed when the chin was distorted by wide-angle lenses.
+    // --- 3D FACIAL THIRDS ANTHROPOMETRY (DA VINCI / FARKAS CANON) ---
+    // The user requested we use the classical facial thirds: Menton (152) -> Subnasale (2) -> Glabella (9).
+    // By calculating this in true 3D space (incorporating the z-axis), we completely eliminate 
+    // camera perspective distortion and 2D foreshortening bugs caused by tilting the head.
     
-    const baseHairline = meshTopPt;
-    const adjustmentPx = hairlineUserAdj * eyeDist; // user slider adjustment
+    const ptChin = landmarks[152];
+    const ptNose = landmarks[2];
+    const ptGlabella = landmarks[9];
 
-    const hairlinePt = {
-      x: baseHairline.x + uUp.x * adjustmentPx,
-      y: baseHairline.y + uUp.y * adjustmentPx
+    // Convert to uniformly scaled 3D coordinates (MediaPipe scales Z by width)
+    const chin3D = { x: ptChin.x * width, y: ptChin.y * height, z: ptChin.z * width };
+    const nose3D = { x: ptNose.x * width, y: ptNose.y * height, z: ptNose.z * width };
+    const glabella3D = { x: ptGlabella.x * width, y: ptGlabella.y * height, z: ptGlabella.z * width };
+
+    // 3D Length of Lower Third (Chin to Nose)
+    const dLowX = nose3D.x - chin3D.x;
+    const dLowY = nose3D.y - chin3D.y;
+    const dLowZ = nose3D.z - chin3D.z;
+    const lowThirdLen = Math.hypot(dLowX, dLowY, dLowZ);
+
+    // 3D Length of Middle Third (Nose to Glabella)
+    const dMidX = glabella3D.x - nose3D.x;
+    const dMidY = glabella3D.y - nose3D.y;
+    const dMidZ = glabella3D.z - nose3D.z;
+    const midThirdLen = Math.hypot(dMidX, dMidY, dMidZ);
+
+    // True physical 3D length of the forehead (Upper Third)
+    const referenceThird3D = (midThirdLen * 0.55 + lowThirdLen * 0.45);
+    const targetForeheadLen3D = referenceThird3D * (0.98 + hairlineUserAdj);
+
+    // Normalize the 3D UP vector (direction from Nose to Glabella)
+    const uUp3D = {
+      x: dMidX / midThirdLen,
+      y: dMidY / midThirdLen,
+      z: dMidZ / midThirdLen
     };
+
+    // Project the 3D Hairline Point (Trichion) by extending UP from the Glabella
+    const hairline3D = {
+      x: glabella3D.x + uUp3D.x * targetForeheadLen3D,
+      y: glabella3D.y + uUp3D.y * targetForeheadLen3D,
+      z: glabella3D.z + uUp3D.z * targetForeheadLen3D
+    };
+
+    // Flatten back to 2D screen coordinates
+    const hairlinePt = { x: hairline3D.x, y: hairline3D.y };
 
     // Strict Eyebrow & Eyes Exclusion:
     // Tefillin is placed on the head/forehead, NEVER on or near the eyebrows, eyelids, or frames.
