@@ -27,26 +27,34 @@ def add_image(file_path, group, expected, description, display_name):
         "path": data_uri
     })
 
-# 1. samples/OK
-if os.path.exists("samples/OK"):
-    for f in os.listdir("samples/OK"):
-        if is_image(f):
-            add_image(os.path.join("samples/OK", f), "OK", "ALIGNED", "Kosher / On Hair", f"OK/{f}")
+# Scan the samples directory dynamically
+if os.path.exists("samples"):
+    for root_dir, dirs, files in os.walk("samples"):
+        for f in files:
+            if is_image(f):
+                file_path = os.path.join(root_dir, f)
+                rel_dir = os.path.relpath(root_dir, "samples")
+                
+                group_name = "samples/" if rel_dir == "." else rel_dir
+                
+                # Determine expected result based on path or filename
+                lower_path = file_path.lower()
+                if "wrong" in lower_path or "error" in lower_path:
+                    expected = "FOREHEAD_ERROR"
+                elif "ok" in lower_path:
+                    expected = "ALIGNED"
+                elif "cropped" in lower_path:
+                    expected = "FOREHEAD_ERROR" if re.search(r"images \(3\)|images \(4\)|images \(6\)", f) else "ALIGNED"
+                else:
+                    # Default to ALIGNED for unknown folders
+                    expected = "ALIGNED"
+                    
+                description = f"Image in {group_name}"
+                display_name = f"{group_name}/{f}"
+                
+                add_image(file_path, group_name, expected, description, display_name)
 
-# 2. samples/WRONG
-if os.path.exists("samples/WRONG"):
-    for f in os.listdir("samples/WRONG"):
-        if is_image(f):
-            add_image(os.path.join("samples/WRONG", f), "WRONG", "FOREHEAD_ERROR", "Invalid / On Forehead", f"WRONG/{f}")
-
-# 3. samples/cropped
-if os.path.exists("samples/cropped"):
-    for f in os.listdir("samples/cropped"):
-        if is_image(f):
-            exp = "FOREHEAD_ERROR" if re.search(r"images \(3\)|images \(4\)|images \(6\)", f) else "ALIGNED"
-            add_image(os.path.join("samples/cropped", f), "cropped/", exp, "Cropped face", f"cropped/{f}")
-
-# 4. Root folder test images
+# Root folder test images
 for f in os.listdir("."):
     if os.path.isfile(f) and is_image(f):
         exp = "FOREHEAD_ERROR" if re.search(r"exmple3", f) else "ALIGNED"
