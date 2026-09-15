@@ -935,7 +935,7 @@
         return { status: "NO_FACE", details: "שגיאה בחישוב גיאומטריה" };
       }
 
-      logDebug(`   Face Geometry: EyeDist=${geometry.eyeDist.toFixed(1)}px | Pitch=${(geometry.pitchAngle * 180 / Math.PI).toFixed(1)}° | MidThird=${geometry.midThirdHeight.toFixed(1)}px | LowerThird=${geometry.lowerThirdHeight.toFixed(1)}px`);
+      logDebug(`   Face Geometry: EyeDist=${geometry.eyeDist.toFixed(1)}px | Pitch=${(geometry.pitchAngle * 180 / Math.PI).toFixed(1)}°`);
       logDebug(`   HairlinePt: (${Math.round(geometry.hairlinePt.x)}, ${Math.round(geometry.hairlinePt.y)}) | EyebrowTop: ${Math.round(geometry.eyebrowLevelY)}px | SearchArea: (${geometry.searchArea.x}, ${geometry.searchArea.y}, ${geometry.searchArea.width}x${geometry.searchArea.height})`);
 
       // 2. AI Detect Tefillin Ketzitzah via YOLO ONNX Model
