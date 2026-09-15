@@ -55,7 +55,7 @@ const TefillinEngine = (function () {
     
     const ptChin = landmarks[152];
     const ptNose = landmarks[2];
-    const ptGlabella = landmarks[9];
+    const ptGlabella = landmarks[8]; // Glabella is #8, not #9 (9 is too high on the forehead)
 
     // Convert to uniformly scaled 3D coordinates (MediaPipe scales Z by width)
     const chin3D = { x: ptChin.x * width, y: ptChin.y * height, z: ptChin.z * width };
