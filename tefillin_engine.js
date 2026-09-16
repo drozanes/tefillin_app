@@ -48,48 +48,38 @@ const TefillinEngine = (function () {
     const dy = (meshTopPt.y - nosePt.y);
     const pitchAngle = Math.atan2(dz, Math.abs(dy));
     const pitchCompression = Math.max(0.7, Math.cos(pitchAngle));
-    // --- 3D ANATOMICAL PROJECTION (PITCH-STABILIZED) ---
-    // MediaPipe's 3D mesh stretches to match 2D wide-angle camera distortion, meaning the chin 
-    // artificially inflates when the camera is held low. This causes the hairline to bounce when pitching.
-    // The ONLY metric immune to pitch distortion is the horizontal distance between the eyes (eyeDist), 
-    // because the eyes act as the axis of pitch rotation.
-    // We strictly use the Inter-Pupillary Distance (eyeDist) to scale the forehead height.
+    // --- 2D PITCH-AWARE ANCHOR METHOD ---
+    // Manual 3D projection fails on mobile wide-angle lenses because it lacks the camera matrix.
+    // The ONLY way to perfectly track the skin without "bouncing" when the head pitches is to 
+    // anchor strictly to the 2D FaceMesh landmarks (which naturally bake in all lens distortion).
+    // We anchor to Landmark 10 (the absolute highest point on the mesh).
+    // To allow the user to push the line higher up their bald scalp, we apply the slider offset.
+    // CRUCIAL: We scale the slider offset using the 2D vertical distance between Nose(2) and Glabella(8).
+    // This vertical distance naturally shrinks/expands on the 2D screen when the head pitches up/down,
+    // which means our offset will perfectly foreshorten in sync with the physical head rotation!
     
     const ptNose = landmarks[2];
-    const ptGlabella = landmarks[8]; // Glabella is #8
+    const ptGlabella = landmarks[8];
+    const ptMeshTop = landmarks[10];
 
-    // Convert to uniformly scaled 3D coordinates (MediaPipe scales Z by width)
-    const nose3D = { x: ptNose.x * width, y: ptNose.y * height, z: ptNose.z * width };
-    const glabella3D = { x: ptGlabella.x * width, y: ptGlabella.y * height, z: ptGlabella.z * width };
+    // Calculate the 2D vertical scale of the face (Nose to Glabella)
+    const nose2D = { x: ptNose.x * width, y: ptNose.y * height };
+    const glabella2D = { x: ptGlabella.x * width, y: ptGlabella.y * height };
+    const faceVerticalScale2D = Math.hypot(glabella2D.x - nose2D.x, glabella2D.y - nose2D.y);
 
-    // 3D Length of Middle Third (Nose to Glabella) just to get the 3D UP vector direction
-    const dMidX = glabella3D.x - nose3D.x;
-    const dMidY = glabella3D.y - nose3D.y;
-    const dMidZ = glabella3D.z - nose3D.z;
-    const midThirdLen = Math.hypot(dMidX, dMidY, dMidZ);
+    // Calculate the 2D screen UP vector
+    const uScreenUpX = (glabella2D.x - nose2D.x) / faceVerticalScale2D;
+    const uScreenUpY = (glabella2D.y - nose2D.y) / faceVerticalScale2D;
 
-    // True physical 3D length of the forehead (Upper Third)
-    // We lock this strictly to 88% of the Eye Distance, completely bypassing the chin.
-    // This makes the physical 3D length rock-solid regardless of head pitch.
-    const referenceThird3D = eyeDist * 0.88;
-    const targetForeheadLen3D = referenceThird3D * (0.98 + hairlineUserAdj);
+    // We add a baseline offset of 0.6 to push it from the middle of the forehead (MeshTop) 
+    // up to the average natural hairline, PLUS the user's manual slider adjustment.
+    const totalOffsetMultiplier = 0.60 + hairlineUserAdj;
+    const offsetPx = totalOffsetMultiplier * faceVerticalScale2D;
 
-    // Normalize the 3D UP vector (direction from Nose to Glabella)
-    const uUp3D = {
-      x: dMidX / midThirdLen,
-      y: dMidY / midThirdLen,
-      z: dMidZ / midThirdLen
+    const hairlinePt = {
+      x: (ptMeshTop.x * width) + uScreenUpX * offsetPx,
+      y: (ptMeshTop.y * height) + uScreenUpY * offsetPx
     };
-
-    // Project the 3D Hairline Point (Trichion) by extending UP from the Glabella
-    const hairline3D = {
-      x: glabella3D.x + uUp3D.x * targetForeheadLen3D,
-      y: glabella3D.y + uUp3D.y * targetForeheadLen3D,
-      z: glabella3D.z + uUp3D.z * targetForeheadLen3D
-    };
-
-    // Flatten back to 2D screen coordinates
-    const hairlinePt = { x: hairline3D.x, y: hairline3D.y };
 
     // Strict Eyebrow & Eyes Exclusion:
     // Tefillin is placed on the head/forehead, NEVER on or near the eyebrows, eyelids, or frames.
