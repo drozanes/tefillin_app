@@ -508,9 +508,6 @@
             <label style="font-size: 0.78rem; color: var(--accent-gold); cursor: pointer;">
               <input type="checkbox" id="showGuidesToggle" checked> הצג קווי עזר (Guides)
             </label>
-            <label style="font-size: 0.78rem; color: var(--accent-cyan); cursor: pointer;">
-              <input type="checkbox" id="showMaskToggle"> הצג מסכת פיקסלים (Mask)
-            </label>
           </div>
         </div>
 
@@ -525,47 +522,18 @@
         </div>
       </div>
 
-      <!-- Right: Tuning Sliders & Blob Inspector -->
+      <!-- Right: Tuning Sliders & Inspector -->
       <div class="panel">
-        <h3>⚙️ כוונון פרמטרים בזמן אמת (Real-Time Threshold Tuner)</h3>
+        <h3>⚙️ כוונון פרמטרים (Geometry Tuner)</h3>
         <div class="controls-grid">
-          <div class="control-item">
-            <label><span>סף בהירות שחור (Brightness)</span><b id="lblBrightness">88</b></label>
-            <input type="range" id="sliderBrightness" min="40" max="130" value="88">
-          </div>
-          <div class="control-item">
-            <label><span>סף רוויה צבעונית (Max Color Diff)</span><b id="lblSaturation">32</b></label>
-            <input type="range" id="sliderSaturation" min="10" max="60" value="32">
-          </div>
-          <div class="control-item">
-            <label><span>גודל מינימלי (% ממרחק עיניים)</span><b id="lblMinSize">14%</b></label>
-            <input type="range" id="sliderMinSize" min="8" max="35" value="14">
-          </div>
           <div class="control-item">
             <label><span>הסטת קו שיער (Hairline Offset)</span><b id="lblHairlineOffset">+0.00</b></label>
             <input type="range" id="sliderHairlineOffset" min="-0.20" max="0.30" step="0.02" value="0.00">
           </div>
         </div>
 
-        <h3 style="margin-top: 6px;">📊 רשימת גושים מזוהים בתמונה (Connected Blobs)</h3>
-        <div class="table-container" style="max-height: 180px;">
-          <table>
-            <thead>
-              <tr>
-                <th>גוש #</th>
-                <th>מימדים (WxH)</th>
-                <th>פיקסלים</th>
-                <th>צפיפות (Density)</th>
-                <th>מרחק מאמצע</th>
-                <th>ציון סופי</th>
-                <th>סטטוס</th>
-              </tr>
-            </thead>
-            <tbody id="blobsTableBody">
-              <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">אין נתונים</td></tr>
-            </tbody>
-          </table>
         </div>
+
 
         <div style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 8px; font-size: 0.75rem; color: var(--text-muted);">
           <b>💡 סטטוסים מוכרים:</b>
@@ -632,21 +600,13 @@
     const statFailed = document.getElementById('statFailed');
     const statAccuracy = document.getElementById('statAccuracy');
 
-    const sliderBrightness = document.getElementById('sliderBrightness');
-    const sliderSaturation = document.getElementById('sliderSaturation');
-    const sliderMinSize = document.getElementById('sliderMinSize');
     const sliderHairlineOffset = document.getElementById('sliderHairlineOffset');
 
-    const lblBrightness = document.getElementById('lblBrightness');
-    const lblSaturation = document.getElementById('lblSaturation');
-    const lblMinSize = document.getElementById('lblMinSize');
     const lblHairlineOffset = document.getElementById('lblHairlineOffset');
 
-    const showMaskToggle = document.getElementById('showMaskToggle');
     const resultBanner = document.getElementById('resultBanner');
     const resultText = document.getElementById('resultText');
     const resultScore = document.getElementById('resultScore');
-    const blobsTableBody = document.getElementById('blobsTableBody');
     const currentImageTitle = document.getElementById('currentImageTitle');
 
     // MediaPipe FaceMesh Instance (Configured with 0.35 confidence for cropped faces & tallitot)
@@ -894,11 +854,8 @@
     }
 
     // Sliders Event Listeners (Instantly re-render without re-running MediaPipe)
-    [sliderBrightness, sliderSaturation, sliderMinSize, sliderHairlineOffset, showMaskToggle].forEach(input => {
+      [sliderHairlineOffset].forEach(input => {
       input.addEventListener('input', () => {
-        lblBrightness.innerText = sliderBrightness.value;
-        lblSaturation.innerText = sliderSaturation.value;
-        lblMinSize.innerText = sliderMinSize.value + '%';
         const hVal = parseFloat(sliderHairlineOffset.value);
         lblHairlineOffset.innerText = (hVal >= 0 ? '+' : '') + hVal.toFixed(2);
         runAnalysis();
@@ -906,7 +863,6 @@
     });
 
     document.getElementById('showGuidesToggle').addEventListener('change', runAnalysis);
-    document.getElementById('showMaskToggle').addEventListener('change', runAnalysis);
 
     /**
      * Exact Computer Vision Engine Execution on Static Photo via TefillinEngine
@@ -922,7 +878,6 @@
         resultBanner.className = "result-banner red";
         resultText.innerText = "❌ לא זוהו פנים בתמונה";
         resultScore.innerText = "NO_FACE";
-        blobsTableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--accent-red);">לא זוהו פנים (נסו תמונה ברורה יותר)</td></tr>`;
         return { status: "NO_FACE", details: "לא זוהו פנים" };
       }
 
@@ -988,28 +943,6 @@
         boxHeight: winner.boxHeight,
         density: winner.density
       };
-    }
-
-    function updateBlobsTable(blobs, winner) {
-      if (!blobs || blobs.length === 0) {
-        blobsTableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">לא זוהו גושים שחורים באזור הסריקה</td></tr>`;
-        return;
-      }
-
-      blobsTableBody.innerHTML = blobs.map(b => {
-        const isWinner = winner && winner.id === b.id;
-        return `
-          <tr class="${isWinner ? 'winner' : ''}">
-            <td>${isWinner ? '⭐ #' + b.id : '#' + b.id}</td>
-            <td>${b.width}x${b.height}</td>
-            <td>${b.count}</td>
-            <td>${(b.density * 100).toFixed(0)}%</td>
-            <td>${Math.round(b.distFromMidline)}px</td>
-            <td>${b.totalScore}</td>
-            <td>${isWinner ? 'נבחר ✔️' : (b.rejectReason || 'ציון נמוך')}</td>
-          </tr>
-        `;
-      }).join('');
     }
 
     /**
@@ -1132,9 +1065,6 @@
           const tempCtx = tempCanvas.getContext('2d');
 
           const userHairAdj = parseFloat(sliderHairlineOffset.value);
-          const brightnessThresh = parseInt(sliderBrightness.value);
-          const saturationThresh = parseInt(sliderSaturation.value);
-          const minSizePct = parseInt(sliderMinSize.value) / 100;
 
           const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, tempCanvas.width, tempCanvas.height, userHairAdj);
           if (!geometry) {
