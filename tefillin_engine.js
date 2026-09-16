@@ -48,34 +48,30 @@ const TefillinEngine = (function () {
     const dy = (meshTopPt.y - nosePt.y);
     const pitchAngle = Math.atan2(dz, Math.abs(dy));
     const pitchCompression = Math.max(0.7, Math.cos(pitchAngle));
-    // --- 3D FACIAL THIRDS ANTHROPOMETRY (DA VINCI / FARKAS CANON) ---
-    // The user requested we use the classical facial thirds: Menton (152) -> Subnasale (2) -> Glabella (9).
-    // By calculating this in true 3D space (incorporating the z-axis), we completely eliminate 
-    // camera perspective distortion and 2D foreshortening bugs caused by tilting the head.
+    // --- 3D ANATOMICAL PROJECTION (PITCH-STABILIZED) ---
+    // MediaPipe's 3D mesh stretches to match 2D wide-angle camera distortion, meaning the chin 
+    // artificially inflates when the camera is held low. This causes the hairline to bounce when pitching.
+    // The ONLY metric immune to pitch distortion is the horizontal distance between the eyes (eyeDist), 
+    // because the eyes act as the axis of pitch rotation.
+    // We strictly use the Inter-Pupillary Distance (eyeDist) to scale the forehead height.
     
-    const ptChin = landmarks[152];
     const ptNose = landmarks[2];
-    const ptGlabella = landmarks[8]; // Glabella is #8, not #9 (9 is too high on the forehead)
+    const ptGlabella = landmarks[8]; // Glabella is #8
 
     // Convert to uniformly scaled 3D coordinates (MediaPipe scales Z by width)
-    const chin3D = { x: ptChin.x * width, y: ptChin.y * height, z: ptChin.z * width };
     const nose3D = { x: ptNose.x * width, y: ptNose.y * height, z: ptNose.z * width };
     const glabella3D = { x: ptGlabella.x * width, y: ptGlabella.y * height, z: ptGlabella.z * width };
 
-    // 3D Length of Lower Third (Chin to Nose)
-    const dLowX = nose3D.x - chin3D.x;
-    const dLowY = nose3D.y - chin3D.y;
-    const dLowZ = nose3D.z - chin3D.z;
-    const lowThirdLen = Math.hypot(dLowX, dLowY, dLowZ);
-
-    // 3D Length of Middle Third (Nose to Glabella)
+    // 3D Length of Middle Third (Nose to Glabella) just to get the 3D UP vector direction
     const dMidX = glabella3D.x - nose3D.x;
     const dMidY = glabella3D.y - nose3D.y;
     const dMidZ = glabella3D.z - nose3D.z;
     const midThirdLen = Math.hypot(dMidX, dMidY, dMidZ);
 
     // True physical 3D length of the forehead (Upper Third)
-    const referenceThird3D = (midThirdLen * 0.55 + lowThirdLen * 0.45);
+    // We lock this strictly to 88% of the Eye Distance, completely bypassing the chin.
+    // This makes the physical 3D length rock-solid regardless of head pitch.
+    const referenceThird3D = eyeDist * 0.88;
     const targetForeheadLen3D = referenceThird3D * (0.98 + hairlineUserAdj);
 
     // Normalize the 3D UP vector (direction from Nose to Glabella)
