@@ -482,6 +482,7 @@
           <h3 style="font-size: 0.9rem; color: var(--accent-gold);">🖼️ גלריית תמונות:</h3>
           <div class="tab-bar">
             <button class="tab-btn active" id="tabOK">🟢 תיקיית OK (תקין כהלכה)</button>
+            <button class="tab-btn" id="tabPhotos">📁 Photos-1-001</button>
             <button class="tab-btn" id="tabWrong">🔴 תיקיית WRONG (פסול / שגיאות)</button>
             <button class="tab-btn" id="tabCropped">📁 cropped/</button>
             <button class="tab-btn" id="tabRoot">📁 root/</button>
@@ -584,11 +585,12 @@
     const fileInput = document.getElementById('fileInput');
 
     const tabOK = document.getElementById('tabOK');
+    const tabPhotos = document.getElementById('tabPhotos');
     const tabWrong = document.getElementById('tabWrong');
     const tabCropped = document.getElementById('tabCropped');
     const tabRoot = document.getElementById('tabRoot');
     const tabAll = document.getElementById('tabAll');
-    const allTabBtns = [tabOK, tabWrong, tabCropped, tabRoot, tabAll];
+    const allTabBtns = [tabOK, tabPhotos, tabWrong, tabCropped, tabRoot, tabAll];
     const lblSampleCount = document.getElementById('lblSampleCount');
 
     const btnUpdateSamples = document.getElementById('btnUpdateSamples');
@@ -732,6 +734,7 @@
     }
 
     tabOK.addEventListener('click', () => selectTab('OK', tabOK));
+    if (tabPhotos) tabPhotos.addEventListener('click', () => selectTab('Photos-1-001', tabPhotos));
     tabWrong.addEventListener('click', () => selectTab('WRONG', tabWrong));
     if (tabCropped) tabCropped.addEventListener('click', () => selectTab('cropped/', tabCropped));
     tabRoot.addEventListener('click', () => selectTab('root/', tabRoot));
@@ -889,7 +892,7 @@
       const userHairAdj = parseFloat(sliderHairlineOffset.value);
 
       // 1. Analyze 3D Geometry via TefillinEngine
-      const geometry = TefillinEngine.analyzeFaceGeometry(latestLandmarks, w, h, userHairAdj);
+      const geometry = TefillinEngine.analyzeFaceGeometry(latestLandmarks, w, h, userHairAdj, ctx);
       if (!geometry) {
         logDebug(`   ❌ Failed to compute 3D face geometry.`);
         return { status: "NO_FACE", details: "שגיאה בחישוב גיאומטריה" };
@@ -1074,7 +1077,7 @@
 
           const userHairAdj = parseFloat(sliderHairlineOffset.value);
 
-          const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, tempCanvas.width, tempCanvas.height, userHairAdj);
+          const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, tempCanvas.width, tempCanvas.height, userHairAdj, tempCtx);
           if (!geometry) {
             resolve({ status: "NO_FACE", details: "שגיאה בגיאומטריה" });
             return;

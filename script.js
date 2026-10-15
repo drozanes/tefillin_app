@@ -232,7 +232,7 @@ async function onFaceResults(results) {
   const h = canvas.height;
 
   // 1. Extract 3D Geometry from Shared TefillinEngine
-  const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, w, h, state.hairlineUserAdjustment);
+  const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, w, h, state.hairlineUserAdjustment, ctx);
   if (!geometry) { ctx.restore(); return; }
 
   // 2. AI Detect Tefillin Ketzitzah via YOLO ONNX Model (DECOUPLED FOR SILKY SMOOTH FPS)

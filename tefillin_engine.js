@@ -10,7 +10,103 @@ const TefillinEngine = (function () {
    * 1. Extract 3D Facial Geometry & Halachic Reference Points from MediaPipe 468/478 Landmarks
    * Using Option 1: Multi-Thirds Facial Anthropometry (The Da Vinci / Farkas Canon)
    */
-  function analyzeFaceGeometry(landmarks, width, height, hairlineUserAdj = 0) {
+  /**
+   * Helper: Adaptive Visual Hairline Detection
+   * Samples forehead skin tone above Glabella and scans along the central facial symmetry axis (uUp)
+   * to find the true physiological boundary where forehead skin ends and hair roots begin.
+   * If hair is detected, snaps to the real visible hair roots.
+   * If bald or low contrast, returns null so the engine falls back to the calibrated anatomical prior.
+   */
+  function detectVisualHairline(ctx, width, height, glabellaPt, uUp, eyeDist, pitchAngle) {
+    if (!ctx) return null;
+    try {
+      const pitchFactor = Math.max(0.60, Math.cos(25 * Math.PI / 180 + pitchAngle) / Math.cos(25 * Math.PI / 180));
+      const uCross = { x: -uUp.y, y: uUp.x };
+      
+      const scanStart = 0.64 * eyeDist * pitchFactor;
+      const scanEnd = 0.94 * eyeDist * pitchFactor;
+      const corridorHalfW = Math.round(eyeDist * 0.25);
+      
+      const ptBottom = { x: glabellaPt.x + uUp.x * (0.35 * eyeDist), y: glabellaPt.y + uUp.y * (0.35 * eyeDist) };
+      const ptTop = { x: glabellaPt.x + uUp.x * scanEnd, y: glabellaPt.y + uUp.y * scanEnd };
+      
+      const minX = Math.max(0, Math.min(Math.round(Math.min(ptBottom.x, ptTop.x) - corridorHalfW), width - 1));
+      const maxX = Math.max(0, Math.min(Math.round(Math.max(ptBottom.x, ptTop.x) + corridorHalfW), width - 1));
+      const minY = Math.max(0, Math.min(Math.round(Math.min(ptBottom.y, ptTop.y) - 10), height - 1));
+      const maxY = Math.max(0, Math.min(Math.round(Math.max(ptBottom.y, ptTop.y) + 10), height - 1));
+      
+      const cropW = maxX - minX + 1;
+      const cropH = maxY - minY + 1;
+      if (cropW < 5 || cropH < 5) return null;
+      
+      const imgData = ctx.getImageData(minX, minY, cropW, cropH);
+      const data = imgData.data;
+      
+      function getGray(px, py) {
+        const rx = Math.round(px) - minX;
+        const ry = Math.round(py) - minY;
+        if (rx < 0 || rx >= cropW || ry < 0 || ry >= cropH) return -1;
+        const idx = (ry * cropW + rx) * 4;
+        return (data[idx] * 77 + data[idx + 1] * 150 + data[idx + 2] * 29) >> 8;
+      }
+      
+      // Sample baseline forehead skin tone (between 0.40 and 0.55 * eyeDist)
+      let skinSum = 0, skinCount = 0;
+      for (let s = 0; s < 10; s++) {
+        const d = (0.40 + s * 0.015) * eyeDist;
+        const pt = { x: glabellaPt.x + uUp.x * d, y: glabellaPt.y + uUp.y * d };
+        const g = getGray(pt.x, pt.y);
+        if (g >= 0) { skinSum += g; skinCount++; }
+      }
+      if (skinCount === 0) return null;
+      const skinMed = skinSum / skinCount;
+      
+      const stepPx = Math.max(2, Math.round(eyeDist * 0.012));
+      const numSteps = Math.floor((scanEnd - scanStart) / stepPx);
+      
+      for (let i = 0; i < numSteps; i++) {
+        const d = scanStart + i * stepPx;
+        const cx = glabellaPt.x + uUp.x * d;
+        const cy = glabellaPt.y + uUp.y * d;
+        
+        const cVal = getGray(cx, cy);
+        if (cVal < 0) continue;
+        
+        const lx = cx - uCross.x * (eyeDist * 0.15);
+        const ly = cy - uCross.y * (eyeDist * 0.15);
+        const rx = cx + uCross.x * (eyeDist * 0.15);
+        const ry = cy + uCross.y * (eyeDist * 0.15);
+        
+        const lVal = getGray(lx, ly);
+        const rVal = getGray(rx, ry);
+        
+        const isDarkCenter = (cVal < skinMed - 26) || (cVal < skinMed * 0.74);
+        const isDarkLeft = lVal >= 0 && ((lVal < skinMed - 22) || (lVal < skinMed * 0.78));
+        const isDarkRight = rVal >= 0 && ((rVal < skinMed - 22) || (rVal < skinMed * 0.78));
+        
+        // 5-point local texture std
+        let sum = 0, sumSq = 0, count = 0;
+        for (let dy = -2; dy <= 2; dy += 2) {
+          for (let dx = -2; dx <= 2; dx += 2) {
+            const v = getGray(cx + dx, cy + dy);
+            if (v >= 0) { sum += v; sumSq += v * v; count++; }
+          }
+        }
+        const mean = count > 0 ? sum / count : cVal;
+        const variance = count > 0 ? (sumSq / count) - (mean * mean) : 0;
+        const stdDev = Math.sqrt(Math.max(0, variance));
+        
+        if ((isDarkCenter && (isDarkLeft || isDarkRight)) || (stdDev > 18 && cVal < skinMed - 15)) {
+          return d;
+        }
+      }
+      return null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function analyzeFaceGeometry(landmarks, width, height, hairlineUserAdj = 0, ctx = null) {
     if (!landmarks || landmarks.length === 0) return null;
 
     // Key Anthropometric Landmarks
@@ -48,13 +144,16 @@ const TefillinEngine = (function () {
     const dy = (meshTopPt.y - nosePt.y);
     const pitchAngle = Math.atan2(dz, Math.abs(dy));
     const pitchCompression = Math.max(0.7, Math.cos(pitchAngle));
-    // --- PITCH-COMPENSATED ANTHROPOMETRIC HAIRLINE ---
-    // Scaled by eyeDist (rigid skull inter-ocular base, immune to forehead muscle/expression jitter).
-    // Compensates for calvaria perspective foreshortening across head pitch (-6° to +35°).
-    // Baseline distance from Glabella (#8) along uUp facial symmetry axis is ~0.71 * eyeDist at eye-level,
-    // reducing smoothly as head tilts back (positive pitch).
-    const baseRatio = Math.max(0.40, 0.678 - (0.26 * pitchAngle));
-    const distFromGlabella = eyeDist * (baseRatio + hairlineUserAdj * 0.20);
+    const pitchFactor = Math.max(0.60, Math.cos(25 * Math.PI / 180 + pitchAngle) / Math.cos(25 * Math.PI / 180));
+
+    // Try adaptive visual hairline edge detection first
+    const visualHairDist = detectVisualHairline(ctx, width, height, glabellaPt, uUp, eyeDist, pitchAngle);
+
+    // Baseline anatomical prior for natural hairline (trichion ~0.82 * eyeDist with pitch foreshortening)
+    const baseAnatomicalRatio = Math.max(0.40, 0.82 * pitchFactor);
+    const distFromGlabella = visualHairDist !== null
+      ? (visualHairDist + (hairlineUserAdj * 0.15 * eyeDist))
+      : (eyeDist * (baseAnatomicalRatio + hairlineUserAdj * 0.20));
 
     const hairlinePt = {
       x: glabellaPt.x + uUp.x * distFromGlabella,
