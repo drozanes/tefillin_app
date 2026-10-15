@@ -98,6 +98,10 @@ const YoloEngine = (function() {
     let _prepCtx = null;
     let _floatBuf = null;
 
+    // Concurrency queue / mutex lock to guarantee that session.run is never invoked concurrently.
+    // ONNX Runtime Web (WASM/WebGL/WebGPU) is strictly non-reentrant on a single session.
+    let inferenceQueue = Promise.resolve();
+
     async function loadModel(preferredModel) {
         const resolved = await resolveSelectedModel(preferredModel);
 
@@ -105,6 +109,11 @@ const YoloEngine = (function() {
         if (session && activeModelPath === resolved.path) {
             return session;
         }
+
+        // Wait for any active inference to finish before replacing session
+        try {
+            await inferenceQueue;
+        } catch (_) {}
 
         console.log(`[YOLO Engine] Loading model '${resolved.key}' from: ${resolved.path}`);
         activeModelPath = resolved.path;
@@ -210,27 +219,40 @@ const YoloEngine = (function() {
     async function detect(canvas) {
         if (!session) return null;
         
-        const startPre = performance.now();
-        const { tensor, scale, padX, padY } = preprocess(canvas);
-        const endPre = performance.now();
-        
-        const feeds = {};
-        feeds[session.inputNames[0]] = tensor;
-        
-        const startInf = performance.now();
-        const results = await session.run(feeds);
-        const endInf = performance.now();
-        
-        const outputTensor = results[session.outputNames[0]];
-        const finalBox = postprocess(outputTensor, scale, padX, padY);
-        
-        // Throttle debug logging to avoid console spam
-        if (Math.random() < 0.05) {
-            const provider = (session.executionProviders && session.executionProviders[0]) ? (session.executionProviders[0].name || session.executionProviders[0]) : 'unknown';
-            console.log(`[YOLO Profiler] [${activeModelKey}] Pre: ${(endPre - startPre).toFixed(1)}ms | Inf: ${(endInf - startInf).toFixed(1)}ms | Provider: ${provider}`);
-        }
-        
-        return finalBox;
+        // Mutex queue: Ensure preprocess, session.run, and postprocess execute sequentially
+        const queuedTask = inferenceQueue.then(async () => {
+            try {
+                const startPre = performance.now();
+                const { tensor, scale, padX, padY } = preprocess(canvas);
+                const endPre = performance.now();
+                
+                const feeds = {};
+                feeds[session.inputNames[0]] = tensor;
+                
+                const startInf = performance.now();
+                const results = await session.run(feeds);
+                const endInf = performance.now();
+                
+                const outputTensor = results[session.outputNames[0]];
+                const finalBox = postprocess(outputTensor, scale, padX, padY);
+                
+                // Throttle debug logging to avoid console spam
+                if (Math.random() < 0.05) {
+                    const provider = (session.executionProviders && session.executionProviders[0]) ? (session.executionProviders[0].name || session.executionProviders[0]) : 'unknown';
+                    console.log(`[YOLO Profiler] [${activeModelKey}] Pre: ${(endPre - startPre).toFixed(1)}ms | Inf: ${(endInf - startInf).toFixed(1)}ms | Provider: ${provider}`);
+                }
+                
+                return finalBox;
+            } catch (err) {
+                console.warn("[YOLO Engine] Inference execution failed:", err);
+                return null;
+            }
+        });
+
+        // Always update inferenceQueue to resolve so any error never jams the queue
+        inferenceQueue = queuedTask.catch(() => null);
+
+        return queuedTask;
     }
 
     function getActiveModel() {

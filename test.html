@@ -827,6 +827,7 @@
     });
 
     let currentPhotoRequestId = 0;
+    let currentAnalysisRequestId = 0;
 
     async function loadPhoto(imgObj, cardElement) {
       if (!imgObj) return;
@@ -877,12 +878,15 @@
      */
     async function runAnalysis() {
       if (!currentImageElement) return;
+      const analysisId = ++currentAnalysisRequestId;
+      const reqId = currentPhotoRequestId;
 
       TefillinEngine.prepareCanvasForImage(currentImageElement, canvas, 540);
       const w = canvas.width;
       const h = canvas.height;
 
       if (!latestLandmarks) {
+        if (analysisId !== currentAnalysisRequestId || reqId !== currentPhotoRequestId) return;
         resultBanner.className = "result-banner red";
         resultText.innerText = "❌ לא זוהו פנים בתמונה";
         resultScore.innerText = "NO_FACE";
@@ -894,6 +898,7 @@
       // 1. Analyze 3D Geometry via TefillinEngine
       const geometry = TefillinEngine.analyzeFaceGeometry(latestLandmarks, w, h, userHairAdj, ctx);
       if (!geometry) {
+        if (analysisId !== currentAnalysisRequestId || reqId !== currentPhotoRequestId) return;
         logDebug(`   ❌ Failed to compute 3D face geometry.`);
         return { status: "NO_FACE", details: "שגיאה בחישוב גיאומטריה" };
       }
@@ -903,6 +908,9 @@
 
       // 2. AI Detect Tefillin Ketzitzah via YOLO ONNX Model
       const winner = await YoloEngine.detect(canvas);
+      if (analysisId !== currentAnalysisRequestId || reqId !== currentPhotoRequestId) {
+        return; // Stale analysis, ignore
+      }
 
       // 3. Evaluate Halachic Alignment via TefillinEngine
       const alignment = TefillinEngine.evaluateAlignment(winner, geometry);
