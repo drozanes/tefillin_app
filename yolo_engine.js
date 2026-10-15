@@ -1,17 +1,121 @@
 const YoloEngine = (function() {
     let session = null;
+    let activeModelPath = null;
+    let activeModelKey = null;
+
     const modelWidth = 640;
     const modelHeight = 640;
 
-    async function loadModel() {
-        if (!session) {
-            console.log("Loading YOLO ONNX model...");
-            // Use hardware acceleration (WebGPU / WebGL) for massive speedup on mobile
-            session = await ort.InferenceSession.create('models/best.onnx', { 
-                executionProviders: ['webgpu', 'webgl', 'wasm'] 
-            });
-            console.log("YOLO model loaded!");
+    // Default model registry if config.js is not loaded
+    const DEFAULT_MODELS = {
+        'fp16': { id: 'fp16', name: 'FP16 (Half Precision)', path: 'models/best_fp16.onnx', size: '5.9 MB' },
+        'uint8': { id: 'uint8', name: 'INT8 / uint8 (Quantized)', path: 'models/best_uint8.onnx', size: '3.2 MB' },
+        'int8': { id: 'uint8', name: 'INT8 / uint8 (Quantized)', path: 'models/best_uint8.onnx', size: '3.2 MB' },
+        'default': { id: 'default', name: 'Default Model', path: 'models/best.onnx', size: '5.9 MB' }
+    };
+
+    function getRegistry() {
+        if (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.models) {
+            return APP_CONFIG.models;
         }
+        return DEFAULT_MODELS;
+    }
+
+    async function resolveSelectedModel(requestedKeyOrPath) {
+        // 1. Explicit parameter passed to loadModel
+        if (requestedKeyOrPath) {
+            const reg = getRegistry();
+            if (reg[requestedKeyOrPath]) {
+                return { key: reg[requestedKeyOrPath].id || requestedKeyOrPath, path: reg[requestedKeyOrPath].path };
+            }
+            return { key: 'custom', path: requestedKeyOrPath };
+        }
+
+        // 2. URL Query Parameter (?model=uint8, ?model=fp16)
+        try {
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlModel = urlParams.get('model');
+            if (urlModel) {
+                const reg = getRegistry();
+                const key = urlModel.toLowerCase();
+                if (reg[key]) {
+                    return { key: reg[key].id || key, path: reg[key].path };
+                }
+                if (DEFAULT_MODELS[key]) {
+                    return { key: DEFAULT_MODELS[key].id || key, path: DEFAULT_MODELS[key].path };
+                }
+            }
+        } catch (_) {}
+
+        // 3. LocalStorage override (e.g. user toggled in test runner)
+        try {
+            const storedModel = localStorage.getItem('tefillin_model');
+            if (storedModel) {
+                const reg = getRegistry();
+                const key = storedModel.toLowerCase();
+                if (reg[key]) {
+                    return { key: reg[key].id || key, path: reg[key].path };
+                }
+            }
+        } catch (_) {}
+
+        // 4. Server environment variable (from server.py /api/config if on local/custom server)
+        const isStaticHost = window.location.hostname.endsWith('github.io') || window.location.protocol === 'file:';
+        if (!isStaticHost) {
+            try {
+                const resp = await fetch('api/config', { cache: 'no-store' });
+                if (resp.ok) {
+                    const serverCfg = await resp.json();
+                    if (serverCfg && serverCfg.serverEnvModel) {
+                        const key = serverCfg.serverEnvModel.toLowerCase();
+                        const reg = getRegistry();
+                        if (reg[key]) {
+                            return { key: reg[key].id || key, path: reg[key].path };
+                        }
+                        if (serverCfg.serverModelPath) {
+                            return { key, path: serverCfg.serverModelPath };
+                        }
+                    }
+                }
+            } catch (_) {}
+        }
+
+        // 5. Global APP_CONFIG default
+        if (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultModel) {
+            const defKey = APP_CONFIG.defaultModel;
+            const reg = getRegistry();
+            if (reg[defKey]) {
+                return { key: reg[defKey].id || defKey, path: reg[defKey].path };
+            }
+        }
+
+        // 6. Fallback default
+        return { key: 'fp16', path: 'models/best_fp16.onnx' };
+    }
+
+    // Reusable preprocessing resources (avoid GC pressure on every frame)
+    let _prepCanvas = null;
+    let _prepCtx = null;
+    let _floatBuf = null;
+
+    async function loadModel(preferredModel) {
+        const resolved = await resolveSelectedModel(preferredModel);
+
+        // If session is already loaded with the requested model, return it
+        if (session && activeModelPath === resolved.path) {
+            return session;
+        }
+
+        console.log(`[YOLO Engine] Loading model '${resolved.key}' from: ${resolved.path}`);
+        activeModelPath = resolved.path;
+        activeModelKey = resolved.key;
+
+        // Use hardware acceleration (WebGPU / WebGL) with WASM fallback
+        session = await ort.InferenceSession.create(resolved.path, { 
+            executionProviders: ['webgpu', 'webgl', 'wasm'] 
+        });
+        
+        console.log(`[YOLO Engine] Model loaded successfully: ${resolved.key} (${resolved.path})`);
         return session;
     }
 
@@ -24,10 +128,18 @@ const YoloEngine = (function() {
         const padX = (modelWidth - scaledW) / 2;
         const padY = (modelHeight - scaledH) / 2;
 
-        const tmpCanvas = document.createElement('canvas');
-        tmpCanvas.width = modelWidth;
-        tmpCanvas.height = modelHeight;
-        const ctx = tmpCanvas.getContext('2d', { willReadFrequently: true });
+        // Reuse canvas and buffer across frames to avoid allocation + GC pauses
+        if (!_prepCanvas) {
+            _prepCanvas = document.createElement('canvas');
+            _prepCanvas.width = modelWidth;
+            _prepCanvas.height = modelHeight;
+            _prepCtx = _prepCanvas.getContext('2d', { willReadFrequently: true });
+        }
+        if (!_floatBuf) {
+            _floatBuf = new Float32Array(3 * modelWidth * modelHeight);
+        }
+
+        const ctx = _prepCtx;
         
         // Fill with grey padding
         ctx.fillStyle = 'rgb(114, 114, 114)';
@@ -38,12 +150,17 @@ const YoloEngine = (function() {
         
         const imgData = ctx.getImageData(0, 0, modelWidth, modelHeight).data;
         
-        // Convert to NCHW float32 array
-        const float32Data = new Float32Array(3 * modelWidth * modelHeight);
-        for (let i = 0; i < modelWidth * modelHeight; i++) {
-            float32Data[i] = imgData[i * 4] / 255.0; // R
-            float32Data[i + modelWidth * modelHeight] = imgData[i * 4 + 1] / 255.0; // G
-            float32Data[i + 2 * modelWidth * modelHeight] = imgData[i * 4 + 2] / 255.0; // B
+        // Convert to NCHW float32 array — single pass with cached offsets
+        const totalPixels = modelWidth * modelHeight;
+        const float32Data = _floatBuf;
+        const gOffset = totalPixels;
+        const bOffset = totalPixels * 2;
+        const inv255 = 1.0 / 255.0;
+        for (let i = 0; i < totalPixels; i++) {
+            const base = i * 4;
+            float32Data[i] = imgData[base] * inv255;             // R
+            float32Data[gOffset + i] = imgData[base + 1] * inv255; // G
+            float32Data[bOffset + i] = imgData[base + 2] * inv255; // B
         }
         
         const tensor = new ort.Tensor('float32', float32Data, [1, 3, modelHeight, modelWidth]);
@@ -56,14 +173,15 @@ const YoloEngine = (function() {
         let bestBox = null;
         
         // Simple NMS: find the single max confidence box (we only expect 1 tefillin per face)
+        const confOffset = 4 * 8400;
         for (let i = 0; i < 8400; i++) {
-            const conf = data[4 * 8400 + i];
+            const conf = data[confOffset + i];
             if (conf > bestConf && conf > 0.40) {
                 bestConf = conf;
-                const cx = data[0 * 8400 + i];
-                const cy = data[1 * 8400 + i];
-                const w = data[2 * 8400 + i];
-                const h = data[3 * 8400 + i];
+                const cx = data[i];             // row 0
+                const cy = data[8400 + i];      // row 1
+                const w = data[16800 + i];      // row 2
+                const h = data[25200 + i];      // row 3
                 bestBox = { cx, cy, w, h, conf };
             }
         }
@@ -106,17 +224,30 @@ const YoloEngine = (function() {
         const outputTensor = results[session.outputNames[0]];
         const finalBox = postprocess(outputTensor, scale, padX, padY);
         
-        // Log to console so user can verify speed and GPU usage via USB debugging
-        // We throttle the log to avoid console spam
+        // Throttle debug logging to avoid console spam
         if (Math.random() < 0.05) {
-            console.log(`[YOLO Profiler] Preprocess: ${(endPre - startPre).toFixed(1)}ms | Inference: ${(endInf - startInf).toFixed(1)}ms | Provider: ${session.executionProviders[0].name || 'unknown'}`);
+            const provider = (session.executionProviders && session.executionProviders[0]) ? (session.executionProviders[0].name || session.executionProviders[0]) : 'unknown';
+            console.log(`[YOLO Profiler] [${activeModelKey}] Pre: ${(endPre - startPre).toFixed(1)}ms | Inf: ${(endInf - startInf).toFixed(1)}ms | Provider: ${provider}`);
         }
         
         return finalBox;
     }
 
+    function getActiveModel() {
+        return {
+            key: activeModelKey,
+            path: activeModelPath
+        };
+    }
+
+    function getAvailableModels() {
+        return getRegistry();
+    }
+
     return {
         loadModel,
-        detect
+        detect,
+        getActiveModel,
+        getAvailableModels
     };
 })();

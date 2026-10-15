@@ -299,7 +299,15 @@ async function onFaceResults(results) {
     horizStatus.style.color = isCentered ? "var(--accent-green)" : "var(--accent-gold)";
 
     // 6. FINAL STATE SELECTION
-    if (!isKosher) {
+    if (alignment.status === 'CAMERA_TOO_LOW' || alignment.status === 'CAMERA_TOO_HIGH') {
+      // EXTREME CAMERA ANGLE -> ADVISE USER TO HOLD AT EYE LEVEL
+      statusDot.className = "status-indicator-dot caution";
+      statusText.innerText = alignment.status === 'CAMERA_TOO_LOW' ? (state.currentLang === 'he' ? "מצלמה נמוכה מדי" : "Camera Too Low") : (state.currentLang === 'he' ? "מצלמה גבוהה מדי" : "Camera Too High");
+      guidanceCard.className = "guidance-card caution";
+      directionArrow.innerText = "📐";
+      guidanceTitle.innerText = state.currentLang === 'he' ? "זווית צילום לא תקינה" : "Invalid Camera Angle";
+      guidanceSub.innerText = alignment.direction;
+    } else if (!isKosher) {
       // LOWEST EDGE TOUCHES FOREHEAD -> RED ALERT
       statusDot.className = "status-indicator-dot misaligned";
       statusText.innerText = lang.foreheadWarning;

@@ -48,37 +48,26 @@ const TefillinEngine = (function () {
     const dy = (meshTopPt.y - nosePt.y);
     const pitchAngle = Math.atan2(dz, Math.abs(dy));
     const pitchCompression = Math.max(0.7, Math.cos(pitchAngle));
-    // --- 2D PITCH-AWARE ANCHOR METHOD ---
-    // Manual 3D projection fails on mobile wide-angle lenses because it lacks the camera matrix.
-    // The ONLY way to perfectly track the skin without "bouncing" when the head pitches is to 
-    // anchor strictly to the 2D FaceMesh landmarks (which naturally bake in all lens distortion).
-    // We anchor to Landmark 10 (the absolute highest point on the mesh).
-    // To allow the user to push the line higher up their bald scalp, we apply the slider offset.
-    // CRUCIAL: We scale the slider offset using the 2D vertical distance between Nose(2) and Glabella(8).
-    // This vertical distance naturally shrinks/expands on the 2D screen when the head pitches up/down,
-    // which means our offset will perfectly foreshorten in sync with the physical head rotation!
-    
-    const ptNose = landmarks[2];
+    // --- PITCH-COMPENSATED FOREHEAD ANTHROPOMETRIC HAIRLINE ---
+    // Landmark 10 (MeshTop) represents the upper boundary of MediaPipe's facial mesh,
+    // which sits at ~58-60% of the anatomical distance from Glabella (#8) to the Trichion (natural hairline).
+    // The base ratio (Trichion / Glabella->MeshTop) is 1.55 on flat/frontal faces,
+    // and increases slightly with head pitch (+0.286 * pitchAngle, or ~0.005 per degree)
+    // to compensate for perspective foreshortening of the curved frontal bone calvaria.
+
     const ptGlabella = landmarks[8];
     const ptMeshTop = landmarks[10];
 
-    // Calculate the 2D vertical scale of the face (Nose to Glabella)
-    const nose2D = { x: ptNose.x * width, y: ptNose.y * height };
-    const glabella2D = { x: ptGlabella.x * width, y: ptGlabella.y * height };
-    const faceVerticalScale2D = Math.hypot(glabella2D.x - nose2D.x, glabella2D.y - nose2D.y);
+    const glab2D = { x: ptGlabella.x * width, y: ptGlabella.y * height };
+    const mesh2D = { x: ptMeshTop.x * width, y: ptMeshTop.y * height };
 
-    // Calculate the 2D screen UP vector
-    const uScreenUpX = (glabella2D.x - nose2D.x) / faceVerticalScale2D;
-    const uScreenUpY = (glabella2D.y - nose2D.y) / faceVerticalScale2D;
-
-    // We add a baseline offset of 0.6 to push it from the middle of the forehead (MeshTop) 
-    // up to the average natural hairline, PLUS the user's manual slider adjustment.
-    const totalOffsetMultiplier = 0.60 + hairlineUserAdj;
-    const offsetPx = totalOffsetMultiplier * faceVerticalScale2D;
+    // Pitch-compensated ratio with user slider fine-tuning
+    const baseRatio = 1.55 + (0.286 * pitchAngle);
+    const R = Math.max(1.20, Math.min(2.10, baseRatio + hairlineUserAdj));
 
     const hairlinePt = {
-      x: (ptMeshTop.x * width) + uScreenUpX * offsetPx,
-      y: (ptMeshTop.y * height) + uScreenUpY * offsetPx
+      x: glab2D.x + (mesh2D.x - glab2D.x) * R,
+      y: glab2D.y + (mesh2D.y - glab2D.y) * R
     };
 
     // Strict Eyebrow & Eyes Exclusion:
@@ -543,18 +532,29 @@ const TefillinEngine = (function () {
     }
     const isCentered = Math.abs(horizOffsetLocal) < (eyeDist * 0.18);
 
+    // Camera Pose / Angle Limits:
+    // If the camera angle is too steep, perspective distortion degrades detection reliability.
+    const pitchDeg = (geometry.pitchAngle * 180) / Math.PI;
+    const isCameraTooLow = pitchDeg > 35;
+    const isCameraTooHigh = pitchDeg < -20;
+
     let status = 'ALIGNED';
     let warning = false;
     let direction = '';
 
-    if (!isEntirelyOnScalp) {
+    if (isCameraTooLow) {
+      status = 'CAMERA_TOO_LOW';
+      warning = true;
+      direction = '📐 מצלמה נמוכה מדי - יש להחזיק את המכשיר מול הפנים בגובה העיניים';
+    } else if (isCameraTooHigh) {
+      status = 'CAMERA_TOO_HIGH';
+      warning = true;
+      direction = '📐 מצלמה גבוהה מדי - יש להחזיק את המכשיר מול הפנים בגובה העיניים';
+    } else if (!isEntirelyOnScalp) {
       status = 'FOREHEAD_ERROR';
       direction = '⬆️ משוך למעלה'; // Pull UP
     } else if (!isCentered) {
       status = 'OFF_CENTER';
-      // If horizOffsetLocal is positive, tefillin is to the user's Left (our Right). Move Right (user's Right).
-      // Wait, let's trace coordinates. uEye points from user-Right-eye to user-Left-eye (left-to-right on screen).
-      // If horizOffsetLocal > 0, P is on the right side of the screen (user's Left). User needs to move it to their Right.
       if (horizOffsetLocal > 0) {
         direction = '⬅️ הזז ימינה (שלך)'; // Move to User's Right (Screen Left)
       } else {
@@ -575,7 +575,7 @@ const TefillinEngine = (function () {
       status,
       warning,
       direction,
-      isKosher: isEntirelyOnScalp,
+      isKosher: isEntirelyOnScalp && !isCameraTooLow && !isCameraTooHigh,
       isCentered,
       distAboveHairline: Math.round(distAboveHairline),
       horizOffset: Math.round(horizOffsetLocal),

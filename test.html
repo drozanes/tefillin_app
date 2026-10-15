@@ -15,6 +15,7 @@
 
   <!-- Application Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <script src="config.js"></script>
   <script src="yolo_engine.js"></script>
   <script src="tefillin_engine.js"></script>
 
@@ -524,18 +525,22 @@
 
       <!-- Right: Tuning Sliders & Inspector -->
       <div class="panel">
-        <h3>⚙️ כוונון פרמטרים (Geometry Tuner)</h3>
+        <h3>⚙️ כוונון פרמטרים ומודל (Tuner & Model)</h3>
         <div class="controls-grid">
+          <div class="control-item">
+            <label><span>🤖 מודל זיהוי (YOLO Model)</span><b id="lblCurrentModel">--</b></label>
+            <select id="modelSelector" style="width: 100%; background: rgba(15,23,42,0.8); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; font-size: 0.82rem; margin-top: 4px; cursor: pointer;">
+              <option value="fp16">FP16 (5.9 MB) - מומלץ למובייל</option>
+              <option value="uint8">INT8 / uint8 (3.2 MB) - המהיר ביותר</option>
+            </select>
+          </div>
           <div class="control-item">
             <label><span>הסטת קו שיער (Hairline Offset)</span><b id="lblHairlineOffset">+0.00</b></label>
             <input type="range" id="sliderHairlineOffset" min="-0.20" max="0.30" step="0.02" value="0.00">
           </div>
         </div>
 
-        </div>
-
-
-        <div style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 8px; font-size: 0.75rem; color: var(--text-muted);">
+        <div style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 8px; font-size: 0.75rem; color: var(--text-muted); margin-top: 10px;">
           <b>💡 סטטוסים מוכרים:</b>
           <code>ALIGNED</code> (תקין כהלכה במקום שיער) • <code>FOREHEAD_ERROR</code> (פסול - גלש למצח) • <code>OFF_CENTER</code> (סטייה מהאמצע) • <code>NO_TEFILLIN</code> (לא זוהה)
         </div>
@@ -919,7 +924,10 @@
 
       const { isKosher, isCentered, distAboveHairline, horizOffset, status } = alignment;
 
-      if (!isKosher) {
+      if (status === 'CAMERA_TOO_LOW' || status === 'CAMERA_TOO_HIGH') {
+        resultBanner.className = "result-banner yellow";
+        resultText.innerText = alignment.direction;
+      } else if (!isKosher) {
         resultBanner.className = "result-banner red";
         resultText.innerHTML = `❌ פסול! קצה התפילין נוגע במצח (${Math.abs(distAboveHairline)}px מתחת לקו השיער) <br> <a href="https://www.youtube.com/watch?v=4BEhw4g_OJI" target="_blank" style="color: #fff; text-decoration: underline; font-weight: bold;">מדריך וידאו: איך להקטין את הקשר של התפילין</a>`;
       } else if (alignment.status === 'OFF_CENTER') {
@@ -1131,9 +1139,33 @@
       alert("תוכן התוצאות הרצויות (JSON) הועתק ללוח! תוכלו להדביק אותו בקובץ samples/expected_results.json.");
     });
 
+    // Model Selector handler
+    const modelSelector = document.getElementById('modelSelector');
+    const lblCurrentModel = document.getElementById('lblCurrentModel');
+
+    function syncModelUI() {
+      const active = YoloEngine.getActiveModel();
+      if (active && active.key) {
+        modelSelector.value = active.key;
+        lblCurrentModel.innerText = active.key.toUpperCase();
+      }
+    }
+
+    modelSelector.addEventListener('change', async (e) => {
+      const selected = e.target.value;
+      lblCurrentModel.innerText = "טוען...";
+      localStorage.setItem('tefillin_model', selected);
+      logDebug(`🔄 מחליף מודל ל-${selected}...`);
+      await YoloEngine.loadModel(selected);
+      syncModelUI();
+      logDebug(`✅ מודל ${selected} נטען בהצלחה! מריץ ניתוח מחדש...`);
+      runAnalysis();
+    });
+
     // Auto-load first sample on load
     window.addEventListener('DOMContentLoaded', async () => {
       await YoloEngine.loadModel();
+      syncModelUI();
       renderGallery();
       const samples = getFilteredSamples();
       if (samples.length > 0) {
