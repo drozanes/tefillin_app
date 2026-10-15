@@ -12,20 +12,33 @@ def get_mime(filename):
 
 images = []
 
+from PIL import Image
+import io
+
 def add_image(file_path, group, expected, description, display_name):
-    with open(file_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode("utf-8")
-    
-    mime = get_mime(file_path)
-    data_uri = f"data:{mime};base64,{b64}"
-    
-    images.append({
-        "name": display_name,
-        "group": group,
-        "expected": expected,
-        "description": description,
-        "path": data_uri
-    })
+    try:
+        with Image.open(file_path) as im:
+            im = im.convert("RGB")
+            # Downscale large images so samples_data.js remains lightweight (< 2MB total)
+            max_dim = 540
+            if max(im.size) > max_dim:
+                im.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+            
+            buf = io.BytesIO()
+            im.save(buf, format="JPEG", quality=75, optimize=True)
+            b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        
+        data_uri = f"data:image/jpeg;base64,{b64}"
+        
+        images.append({
+            "name": display_name,
+            "group": group,
+            "expected": expected,
+            "description": description,
+            "path": data_uri
+        })
+    except Exception as e:
+        print(f"Skipping {file_path}: {e}")
 
 # Scan the samples directory dynamically
 if os.path.exists("samples"):

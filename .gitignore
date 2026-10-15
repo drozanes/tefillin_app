@@ -5,9 +5,8 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Local sample images and generated data (keep local, do not push to git)
+# Local sample images (raw high-res files kept local)
 samples/
-samples_data.js
 *.jpeg
 *.jpg
 *.png

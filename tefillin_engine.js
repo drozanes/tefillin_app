@@ -48,26 +48,17 @@ const TefillinEngine = (function () {
     const dy = (meshTopPt.y - nosePt.y);
     const pitchAngle = Math.atan2(dz, Math.abs(dy));
     const pitchCompression = Math.max(0.7, Math.cos(pitchAngle));
-    // --- PITCH-COMPENSATED FOREHEAD ANTHROPOMETRIC HAIRLINE ---
-    // Landmark 10 (MeshTop) represents the upper boundary of MediaPipe's facial mesh,
-    // which sits at ~58-60% of the anatomical distance from Glabella (#8) to the Trichion (natural hairline).
-    // The base ratio (Trichion / Glabella->MeshTop) is 1.55 on flat/frontal faces,
-    // and increases slightly with head pitch (+0.286 * pitchAngle, or ~0.005 per degree)
-    // to compensate for perspective foreshortening of the curved frontal bone calvaria.
-
-    const ptGlabella = landmarks[8];
-    const ptMeshTop = landmarks[10];
-
-    const glab2D = { x: ptGlabella.x * width, y: ptGlabella.y * height };
-    const mesh2D = { x: ptMeshTop.x * width, y: ptMeshTop.y * height };
-
-    // Pitch-compensated ratio with user slider fine-tuning
-    const baseRatio = 1.55 + (0.286 * pitchAngle);
-    const R = Math.max(1.20, Math.min(2.10, baseRatio + hairlineUserAdj));
+    // --- PITCH-COMPENSATED ANTHROPOMETRIC HAIRLINE ---
+    // Scaled by eyeDist (rigid skull inter-ocular base, immune to forehead muscle/expression jitter).
+    // Compensates for calvaria perspective foreshortening across head pitch (-6° to +35°).
+    // Baseline distance from Glabella (#8) along uUp facial symmetry axis is ~0.71 * eyeDist at eye-level,
+    // reducing smoothly as head tilts back (positive pitch).
+    const baseRatio = Math.max(0.40, 0.678 - (0.26 * pitchAngle));
+    const distFromGlabella = eyeDist * (baseRatio + hairlineUserAdj * 0.20);
 
     const hairlinePt = {
-      x: glab2D.x + (mesh2D.x - glab2D.x) * R,
-      y: glab2D.y + (mesh2D.y - glab2D.y) * R
+      x: glabellaPt.x + uUp.x * distFromGlabella,
+      y: glabellaPt.y + uUp.y * distFromGlabella
     };
 
     // Strict Eyebrow & Eyes Exclusion:
