@@ -361,10 +361,16 @@ async function onFaceResults(results) {
   ctx.restore();
 }
 
-window.addEventListener('DOMContentLoaded', async () => {
+window.addEventListener('DOMContentLoaded', () => {
   updateUIStrings();
   webcam.classList.toggle('mirrored', state.isMirrored);
   canvas.classList.toggle('mirrored', state.isMirrored);
-  await YoloEngine.loadModel();
+  
+  // 1. Launch camera and face tracking immediately for instant responsiveness
   initCamera();
+
+  // 2. Load YOLO ONNX neural network in parallel in background
+  YoloEngine.loadModel().catch(err => {
+    console.error("YOLO model load error:", err);
+  });
 });
