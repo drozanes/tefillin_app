@@ -106,7 +106,173 @@ const TefillinEngine = (function () {
     }
   }
 
-  function analyzeFaceGeometry(landmarks, width, height, hairlineUserAdj = 0, ctx = null) {
+  /**
+   * Temporal Geometry Stabilizer for live video streams (e.g. smartphone cameras).
+   * Eliminates 1-2px micro-jitter via deadband thresholding and smooths deliberate
+   * head movement using an adaptive low-pass filter (Exponential Moving Average).
+   */
+  function createGeometryStabilizer(options = {}) {
+    const deadbandPx = options.deadbandPx !== undefined ? options.deadbandPx : 2.0;
+    const angleDeadbandDeg = options.angleDeadbandDeg !== undefined ? options.angleDeadbandDeg : 0.6;
+    const minAlpha = options.minAlpha !== undefined ? options.minAlpha : 0.18;
+    const maxAlpha = options.maxAlpha !== undefined ? options.maxAlpha : 0.85;
+
+    let prevGeometry = null;
+    let prevBox = null;
+    let lastVisualRatio = null;
+    let missingVisualCount = 0;
+
+    function reset() {
+      prevGeometry = null;
+      prevBox = null;
+      lastVisualRatio = null;
+      missingVisualCount = 0;
+    }
+
+    function stabilizePoint(prevPt, rawPt, deadband, scale = 1.0) {
+      if (!prevPt) return { ...rawPt };
+      const dx = rawPt.x - prevPt.x;
+      const dy = rawPt.y - prevPt.y;
+      const dist = Math.hypot(dx, dy);
+
+      const effectiveDeadband = deadband * scale;
+
+      // Deadband: within noise tolerance, keep strictly unchanged
+      if (dist <= effectiveDeadband) {
+        return { x: prevPt.x, y: prevPt.y };
+      }
+
+      // Large jump (e.g. face teleported or camera repositioned): snap immediately
+      if (dist > 90 * scale) {
+        return { ...rawPt };
+      }
+
+      // Adaptive alpha based on displacement beyond deadband
+      const t = Math.min(1.0, (dist - effectiveDeadband) / (25 * scale));
+      const alpha = minAlpha + t * (maxAlpha - minAlpha);
+
+      return {
+        x: prevPt.x + alpha * dx,
+        y: prevPt.y + alpha * dy
+      };
+    }
+
+    function stabilizeAngle(prevAngle, rawAngle, deadbandRad) {
+      if (prevAngle === null || prevAngle === undefined) return rawAngle;
+      let diff = rawAngle - prevAngle;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+
+      if (Math.abs(diff) <= deadbandRad) {
+        return prevAngle;
+      }
+
+      const t = Math.min(1.0, (Math.abs(diff) - deadbandRad) / 0.18);
+      const alpha = minAlpha + t * (maxAlpha - minAlpha);
+      return prevAngle + alpha * diff;
+    }
+
+    function update(rawGeometry) {
+      if (!rawGeometry) {
+        reset();
+        return null;
+      }
+
+      if (!prevGeometry) {
+        prevGeometry = { ...rawGeometry };
+        return rawGeometry;
+      }
+
+      const scale = Math.max(0.6, rawGeometry.eyeDist / 140.0);
+      const angleDeadbandRad = (angleDeadbandDeg * Math.PI) / 180;
+
+      // 1. Stabilize Eye Angle and Vector
+      const rawEyeAngle = Math.atan2(rawGeometry.uEye.y, rawGeometry.uEye.x);
+      const prevEyeAngle = Math.atan2(prevGeometry.uEye.y, prevGeometry.uEye.x);
+      const stabEyeAngle = stabilizeAngle(prevEyeAngle, rawEyeAngle, angleDeadbandRad);
+      const stabUEye = { x: Math.cos(stabEyeAngle), y: Math.sin(stabEyeAngle) };
+
+      // 2. Stabilize Up Vector
+      const rawUpAngle = Math.atan2(rawGeometry.uUp.y, rawGeometry.uUp.x);
+      const prevUpAngle = Math.atan2(prevGeometry.uUp.y, prevGeometry.uUp.x);
+      const stabUpAngle = stabilizeAngle(prevUpAngle, rawUpAngle, angleDeadbandRad);
+      const stabUUp = { x: Math.cos(stabUpAngle), y: Math.sin(stabUpAngle) };
+
+      // 3. Stabilize Anchor Points with Deadband
+      const stabGlabella = stabilizePoint(prevGeometry.glabellaPt, rawGeometry.glabellaPt, deadbandPx * 0.8, scale);
+      const stabMeshTop = stabilizePoint(prevGeometry.meshTopPt, rawGeometry.meshTopPt, deadbandPx * 1.0, scale);
+      const stabMidEyes = stabilizePoint(prevGeometry.midEyesPt, rawGeometry.midEyesPt, deadbandPx * 0.8, scale);
+
+      // 4. Stabilize Hairline Point (deadband ensures 1-2px jitter is held 100% still)
+      const stabHairline = stabilizePoint(prevGeometry.hairlinePt, rawGeometry.hairlinePt, deadbandPx, scale);
+
+      // 5. Stabilize Eye Distance smoothly
+      const eyeDistDiff = Math.abs(rawGeometry.eyeDist - prevGeometry.eyeDist);
+      let stabEyeDist = prevGeometry.eyeDist;
+      if (eyeDistDiff > deadbandPx * scale) {
+        stabEyeDist = prevGeometry.eyeDist + 0.25 * (rawGeometry.eyeDist - prevGeometry.eyeDist);
+      }
+
+      const stabilized = {
+        ...rawGeometry,
+        glabellaPt: stabGlabella,
+        meshTopPt: stabMeshTop,
+        midEyesPt: stabMidEyes,
+        hairlinePt: stabHairline,
+        uEye: stabUEye,
+        uUp: stabUUp,
+        eyeDist: stabEyeDist
+      };
+
+      prevGeometry = stabilized;
+      return stabilized;
+    }
+
+    function stabilizeBox(winner) {
+      if (!winner) {
+        prevBox = null;
+        return null;
+      }
+      if (!prevBox) {
+        prevBox = { ...winner };
+        return winner;
+      }
+      const dist = Math.hypot(winner.x - prevBox.x, winner.y - prevBox.y);
+      if (dist <= deadbandPx * 1.2) {
+        return {
+          ...winner,
+          x: prevBox.x,
+          y: prevBox.y,
+          boxWidth: prevBox.boxWidth,
+          boxHeight: prevBox.boxHeight,
+          bottomY: prevBox.bottomY
+        };
+      }
+      const alpha = dist > 40 ? 0.85 : 0.35;
+      const stabBox = {
+        ...winner,
+        x: prevBox.x + alpha * (winner.x - prevBox.x),
+        y: prevBox.y + alpha * (winner.y - prevBox.y),
+        boxWidth: prevBox.boxWidth + alpha * (winner.boxWidth - prevBox.boxWidth),
+        boxHeight: prevBox.boxHeight + alpha * (winner.boxHeight - prevBox.boxHeight),
+        bottomY: prevBox.bottomY + alpha * (winner.bottomY - prevBox.bottomY)
+      };
+      prevBox = stabBox;
+      return stabBox;
+    }
+
+    return {
+      update,
+      stabilizeBox,
+      reset,
+      get lastVisualRatio() { return lastVisualRatio; },
+      set lastVisualRatio(v) { lastVisualRatio = v; },
+      get missingVisualCount() { return missingVisualCount; },
+      set missingVisualCount(v) { missingVisualCount = v; }
+    };
+  }
+
+  function analyzeFaceGeometry(landmarks, width, height, hairlineUserAdj = 0, ctx = null, options = {}) {
     if (!landmarks || landmarks.length === 0) return null;
 
     // Key Anthropometric Landmarks
@@ -147,7 +313,27 @@ const TefillinEngine = (function () {
     const pitchFactor = Math.max(0.60, Math.cos(25 * Math.PI / 180 + pitchAngle) / Math.cos(25 * Math.PI / 180));
 
     // Try adaptive visual hairline edge detection first
-    const visualHairDist = detectVisualHairline(ctx, width, height, glabellaPt, uUp, eyeDist, pitchAngle);
+    let visualHairDist = detectVisualHairline(ctx, width, height, glabellaPt, uUp, eyeDist, pitchAngle);
+
+    // Temporal visual consistency if stabilizer is provided
+    const stabilizer = options.stabilizer || null;
+    if (stabilizer) {
+      if (visualHairDist !== null) {
+        const rawRatio = visualHairDist / eyeDist;
+        if (stabilizer.lastVisualRatio !== null) {
+          stabilizer.lastVisualRatio = 0.80 * stabilizer.lastVisualRatio + 0.20 * rawRatio;
+        } else {
+          stabilizer.lastVisualRatio = rawRatio;
+        }
+        stabilizer.missingVisualCount = 0;
+        visualHairDist = stabilizer.lastVisualRatio * eyeDist;
+      } else if (stabilizer.lastVisualRatio !== null && stabilizer.missingVisualCount < 18) {
+        stabilizer.missingVisualCount++;
+        visualHairDist = stabilizer.lastVisualRatio * eyeDist;
+      } else {
+        stabilizer.lastVisualRatio = null;
+      }
+    }
 
     // Baseline anatomical prior for natural hairline (trichion ~0.82 * eyeDist with pitch foreshortening)
     const baseAnatomicalRatio = Math.max(0.40, 0.82 * pitchFactor);
@@ -175,7 +361,7 @@ const TefillinEngine = (function () {
     const searchBottom = Math.min(strictForeheadLimitY, Math.round(hairlinePt.y + eyeDist * 0.35));
     const searchH = Math.round(Math.max(25, searchBottom - searchY));
 
-    return {
+    const rawGeometry = {
       glabellaPt,
       midEyesPt,
       nosePt,
@@ -193,6 +379,12 @@ const TefillinEngine = (function () {
       eyebrowLevelY,
       searchArea: { x: searchX, y: searchY, width: searchW, height: searchH }
     };
+
+    if (stabilizer && typeof stabilizer.update === 'function') {
+      return stabilizer.update(rawGeometry);
+    }
+
+    return rawGeometry;
   }
 
   /**
@@ -771,6 +963,7 @@ const TefillinEngine = (function () {
 
   return {
     analyzeFaceGeometry,
+    createGeometryStabilizer,
     detectTefillinBlob,
     evaluateAlignment,
     renderOverlays,

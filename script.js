@@ -148,8 +148,17 @@ langToggleBtn.addEventListener('click', () => {
 infoBtn.addEventListener('click', () => infoModal.classList.add('open'));
 closeModalBtn.addEventListener('click', () => infoModal.classList.remove('open'));
 
+// Video Stream Geometry & Overlay Stabilizer (eliminates 1-2px jitter on mobile cameras)
+const videoStabilizer = TefillinEngine.createGeometryStabilizer({
+  deadbandPx: 2.0,
+  angleDeadbandDeg: 0.6,
+  minAlpha: 0.18,
+  maxAlpha: 0.85
+});
+
 toggleMirrorBtn.addEventListener('click', () => {
   state.isMirrored = !state.isMirrored;
+  videoStabilizer.reset();
   webcam.classList.toggle('mirrored', state.isMirrored);
   canvas.classList.toggle('mirrored', state.isMirrored);
 });
@@ -162,16 +171,19 @@ toggleGuidesBtn.addEventListener('click', () => {
 // Hairline Calibration Controls
 hairlineUpBtn.addEventListener('click', () => {
   state.hairlineUserAdjustment += 0.04;
+  videoStabilizer.reset();
   localStorage.setItem('tefillin_hairline_adj', state.hairlineUserAdjustment.toFixed(2));
 });
 
 hairlineDownBtn.addEventListener('click', () => {
   state.hairlineUserAdjustment -= 0.04;
+  videoStabilizer.reset();
   localStorage.setItem('tefillin_hairline_adj', state.hairlineUserAdjustment.toFixed(2));
 });
 
 hairlineResetBtn.addEventListener('click', () => {
   state.hairlineUserAdjustment = 0;
+  videoStabilizer.reset();
   localStorage.removeItem('tefillin_hairline_adj');
 });
 
@@ -215,6 +227,7 @@ async function onFaceResults(results) {
   const lang = i18n[state.currentLang];
 
   if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+    videoStabilizer.reset();
     statusDot.className = "status-indicator-dot searching";
     statusText.innerText = lang.noFace;
     guidanceCard.className = "guidance-card";
@@ -231,8 +244,8 @@ async function onFaceResults(results) {
   const w = canvas.width;
   const h = canvas.height;
 
-  // 1. Extract 3D Geometry from Shared TefillinEngine
-  const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, w, h, state.hairlineUserAdjustment, ctx);
+  // 1. Extract 3D Geometry from Shared TefillinEngine with temporal stabilization
+  const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, w, h, state.hairlineUserAdjustment, ctx, { stabilizer: videoStabilizer });
   if (!geometry) { ctx.restore(); return; }
 
   // 2. AI Detect Tefillin Ketzitzah via YOLO ONNX Model (DECOUPLED FOR SILKY SMOOTH FPS)
@@ -253,7 +266,8 @@ async function onFaceResults(results) {
       window.isYoloRunning = false;
     });
   }
-  const winner = window.lastYoloBox || null;
+  const rawWinner = window.lastYoloBox || null;
+  const winner = videoStabilizer.stabilizeBox(rawWinner);
 
   // 3. Evaluate Halachic Alignment Status
   const alignment = TefillinEngine.evaluateAlignment(winner, geometry);
