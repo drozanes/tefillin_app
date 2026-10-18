@@ -1,0 +1,32 @@
+{
+  "name": "tefillin_app",
+  "version": "1.0.0",
+  "description": "**Tefillin Mirror** is a real-time AI & Computer Vision web application designed to help Jewish users align their Head Tefillin (*Shel Rosh* / קציצה של ראש) with Halachic precision.",
+  "main": "config.js",
+  "scripts": {
+    "build": "mkdir -p www && cp index.html style.css script.js tefillin_engine.js yolo_engine.js config.js www/ && cp -r models www/ && if [ -d vendor ]; then cp -r vendor www/; fi",
+    "setup-vendor": "python3 download_vendor.py",
+    "sync": "npm run build && npx cap sync",
+    "open:android": "npx cap open android",
+    "open:ios": "npx cap open ios",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/drozanes/tefillin_app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/drozanes/tefillin_app/issues"
+  },
+  "homepage": "https://github.com/drozanes/tefillin_app#readme",
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3"
+  }
+}

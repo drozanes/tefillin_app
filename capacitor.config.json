@@ -1,0 +1,8 @@
+{
+  "appId": "com.drozanes.tefillin",
+  "appName": "מראת תפילין",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}

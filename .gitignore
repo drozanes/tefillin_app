@@ -4,6 +4,9 @@ Thumbs.db
 *.log
 .vscode/
 .idea/
+node_modules/
+www/
+vendor/
 
 # Local sample images (raw high-res files kept local)
 samples/
