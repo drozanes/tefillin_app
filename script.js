@@ -611,10 +611,23 @@ async function initCamera() {
   webcam.addEventListener('loadeddata', onCameraFeedActive, { once: true });
   webcam.addEventListener('playing', onCameraFeedActive, { once: true });
 
+  let isFrameProcessing = false;
+
   try {
     const camera = new Camera(webcam, {
       onFrame: async () => {
-        await faceMesh.send({ image: webcam });
+        if (isFrameProcessing) return;
+        if (webcam.readyState < 2 || !webcam.videoWidth || !webcam.videoHeight) {
+          return;
+        }
+        isFrameProcessing = true;
+        try {
+          await faceMesh.send({ image: webcam });
+        } catch (frameErr) {
+          console.error("[FaceMesh Frame Error]:", frameErr);
+        } finally {
+          isFrameProcessing = false;
+        }
       },
       width: 640,
       height: 480
@@ -623,6 +636,8 @@ async function initCamera() {
     onCameraFeedActive();
   } catch (err) {
     console.error("Camera startup error:", err);
+    statusText.innerText = "שגיאה במצלמה: " + (err.message || err);
+    statusDot.className = "status-indicator-dot misaligned";
   }
 }
 
@@ -632,8 +647,12 @@ let yoloCtx = null;
 
 async function onFaceResults(results) {
   hasFirstFaceResult = true;
-  canvas.width = webcam.videoWidth || 640;
-  canvas.height = webcam.videoHeight || 480;
+  const vw = webcam.videoWidth || 640;
+  const vh = webcam.videoHeight || 480;
+  if (canvas.width !== vw || canvas.height !== vh) {
+    canvas.width = vw;
+    canvas.height = vh;
+  }
 
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
