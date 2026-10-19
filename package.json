@@ -1,7 +1,7 @@
 {
   "name": "tefillin_app",
   "version": "1.0.0",
-  "description": "**Tefillin Mirror** is a real-time AI & Computer Vision web application designed to help Jewish users align their Head Tefillin (*Shel Rosh* / קציצה של ראש) with Halachic precision.",
+  "description": "**Tefillin Mirror** is a real-time AI & Computer Vision web application designed to help Jewish users align their Head Tefillin (*Shel Rosh* / תפילין של ראש) with Halachic precision.",
   "main": "config.js",
   "scripts": {
     "build": "mkdir -p www && cp index.html style.css script.js tefillin_engine.js yolo_engine.js config.js www/ && cp -r models www/ && if [ -d vendor ]; then cp -r vendor www/ && python3 -c \"with open('www/index.html') as f: c=f.read(); c=c.replace('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js', 'vendor/mediapipe/camera_utils.js').replace('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js', 'vendor/mediapipe/face_mesh.js').replace('https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js', 'vendor/onnx/ort.min.js'); open('www/index.html','w').write(c)\"; fi",

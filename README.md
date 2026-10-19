@@ -1,6 +1,6 @@
 # Tefillin Mirror | מראת תפילין 🪞✨
 
-**Tefillin Mirror** is a real-time AI & Computer Vision web application designed to help Jewish users align their Head Tefillin (*Shel Rosh* / קציצה של ראש) with Halachic precision.
+**Tefillin Mirror** is a real-time AI & Computer Vision web application designed to help Jewish users align their Head Tefillin (*Shel Rosh* / תפילין של ראש) with Halachic precision.
 
 ---
 

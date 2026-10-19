@@ -920,13 +920,13 @@ const TefillinEngine = (function () {
       direction = '📐 מצלמה גבוהה מדי - יש להחזיק את המכשיר מול הפנים בגובה העיניים';
     } else if (!isEntirelyOnScalp) {
       status = 'FOREHEAD_ERROR';
-      direction = '⬆️ משוך למעלה'; // Pull UP
+      direction = '⬆️ הרימו למעלה'; // Move UP onto hair
     } else if (!isCentered) {
       status = 'OFF_CENTER';
       if (horizOffsetLocal > 0) {
-        direction = '⬅️ הזז ימינה (שלך)'; // Move to User's Right (Screen Left)
+        direction = '⬅️ הזיזו שמאלה'; // Move to User's Left
       } else {
-        direction = '➡️ הזז שמאלה (שלך)'; // Move to User's Left (Screen Right)
+        direction = '➡️ הזיזו ימינה'; // Move to User's Right
       }
     } else {
       status = 'ALIGNED';

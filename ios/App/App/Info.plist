@@ -65,7 +65,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>נדרשת גישה למצלמה לצורך זיהוי קציצת התפילין ומיקומן כהלכה בזמן אמת</string>
+	<string>נדרשת גישה למצלמה לצורך זיהוי התפילין ומיקומן כהלכה בזמן אמת</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 </dict>

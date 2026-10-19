@@ -1,32 +1,37 @@
 /**
  * Real-Time Tefillin Detector & Strict Halachic Alignment Engine
- *
- * Upgraded Features (v2.1):
- * 1. Morphological Dilation & CCA: Bridges specular highlights, seams, and studs so black boxes form unified solid components.
- * 2. Tight Midline Centering: Constrains search width (1.0 * eyeDist) and strictly rejects off-center side blocks / temple objects.
- * 3. Enforced Physical Size: Tefillin cube must be at least 22px / 22% of eye distance.
- * 4. 3D Head-Pose Pitch Correction: Prevents hairline guide line distortion when tilting head up/down.
- * 5. Hairline Calibration Storage: Remembers custom hairline height in localStorage.
  */
+
+// Diagnostic Logging Ring Buffer (records up to 150 recent events for bug reporting)
+const diagnosticLogs = [];
+const MAX_DIAGNOSTIC_LOGS = 150;
+function logDiagnostic(level, ...args) {
+  const timestamp = new Date().toISOString().substring(11, 23);
+  const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+  diagnosticLogs.push(`[${timestamp}] [${level}] ${msg}`);
+  if (diagnosticLogs.length > MAX_DIAGNOSTIC_LOGS) diagnosticLogs.shift();
+}
+const origConsoleLog = console.log;
+const origConsoleWarn = console.warn;
+const origConsoleError = console.error;
+console.log = (...args) => { origConsoleLog(...args); logDiagnostic('INFO', ...args); };
+console.warn = (...args) => { origConsoleWarn(...args); logDiagnostic('WARN', ...args); };
+console.error = (...args) => { origConsoleError(...args); logDiagnostic('ERROR', ...args); };
 
 const state = {
   currentLang: 'he',
-  isMirrored: true,
+  isMirrored: true, // Always mirrored (behaves like standard selfie camera)
   showGuides: true,
   tefillinFound: false,
   isAligned: false,
-  hairlineUserAdjustment: parseFloat(localStorage.getItem('tefillin_hairline_adj') || '0') || 0,
+  selectedModel: localStorage.getItem('tefillin_model') || (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.defaultModel : 'uint8')
 };
 
 const i18n = {
   he: {
     appTitle: "מראת תפילין",
-    subTitle: "זיהוי קציצת תפילין + בדיקת אמצע ומקום שיער",
+    subTitle: "זיהוי תפילין + בדיקת אמצע ומקום שיער",
     langBtn: "English",
-    horizTitle: "מרכוז ברוחב (אמצע העיניים)",
-    vertTitle: "מיקום בגובה (מקום שיער vs מצח)",
-    detectTitle: "זיהוי קציצת תפילין",
-    adjustHairLabel: "קו שיער:",
     initCamera: "מפעיל מצלמה וזיהוי...",
     noFace: "לא זוהו פנים בפריים",
     noTefillin: "⚠️ לא זוהו תפילין על הראש!",
@@ -36,29 +41,27 @@ const i18n = {
     moveUp: "⬆️ הרימו את התפילין למעלה! (התפילין ירדו למצח)",
     perfect: "✨ התפילין מונחות כהלכה!",
     perfectSub: "התפילין במרכז המדויק ומעל קו השיער.",
-    foreheadWarning: "⚠️ אזהרה: קצה התפילין נוגע במצח!",
-    centerStatusOk: "ממורכז מדויק",
-    centerStatusOff: "סטייה מהאמצע",
-    hairStatusOk: "מקום שיער תקין",
-    hairStatusErr: "פסול! (ירד למצח)",
-    detectOk: "קציצה זוהתה בהצלחה",
-    detectErr: "לא זוהו תפילין",
+    foreheadWarning: "⬆️ אזהרה: התפילין נוגעות במצח!",
     modalTitle: "הלכות מקום הנחת תפילין של ראש",
     modalRule1Title: "מקום הנחה ברוחב (אמצע)",
     modalRule1Text: "תפילין של ראש חייבות להיות מכוונות באמצע ממש בין שתי העיניים. חריגה לצדדים פוסלת את המצווה.",
     modalRule2Title: "מקום הנחה בגובה (כל התפילין במקום שיער)",
-    modalRule2Text: "הקציצה והמעברתא חייבות לשבת כולן במקום ששיער ראשו צומח. אם ירדה אפילו מקצת התפילין על המצח - אינו יוצא ידי חובה וברכתו לבטלה!",
-    modalRule3Title: "זיהוי קציצת התפילין במצלמה",
-    modalRule3Text: "המערכת מבודדת את קוביית הקציצה השחורה במרכז המצח, ומוודאת שכל שטח התפילין מונח מעל שורשי השיער."
+    modalRule2Text: "התפילין והמעברתא חייבות לשבת כולן במקום ששיער ראשו צומח. אם ירדה אפילו מקצת התפילין על המצח - אינו יוצא ידי חובה וברכתו לבטלה!",
+    modalRule3Title: "זיהוי התפילין במצלמה",
+    modalRule3Text: "המערכת מזהה את התפילין במרכז המצח, ומוודאת שכל שטח התפילין מונח מעל שורשי השיער.",
+    bugModalTitle: "🐞 דיווח על בעיה",
+    bugIntro: "נתקלתם בבעיה בזיהוי התפילין או ביציבות? באפשרותכם להקליט סרטון קצר (5 שניות) ולשלוח לוגים טכניים כדי שנוכל לתקן זאת בהקדם.",
+    recordVideoBtn: "הקלט 5 שניות וידאו ושתף לוגים",
+    recordingText: "מקליט וידאו... ",
+    snapshotBtn: "צלם תמונת מסך ולוגים בלבד",
+    shareBtn: "שתף (WhatsApp / Gmail)",
+    downloadBtn: "הורד קובץ",
+    bugSuccess: "הדוח מוכן! ניתן לשתף או להוריד כעת."
   },
   en: {
     appTitle: "Tefillin Mirror",
-    subTitle: "Tefillin Box Detection & Halachic Alignment",
+    subTitle: "Tefillin Detection & Halachic Alignment",
     langBtn: "עברית",
-    horizTitle: "Horizontal Center (Between Eyes)",
-    vertTitle: "Vertical Scalp Height (Hair vs Forehead)",
-    detectTitle: "Tefillin Box Detection",
-    adjustHairLabel: "Hairline:",
     initCamera: "Initializing camera...",
     noFace: "No face detected in frame",
     noTefillin: "⚠️ Tefillin NOT Detected on Head!",
@@ -68,20 +71,22 @@ const i18n = {
     moveUp: "⬆️ Lift Tefillin UP! (Slipped onto forehead)",
     perfect: "✨ Tefillin Properly Aligned!",
     perfectSub: "Entire Tefillin box is centered and resting strictly on hair area.",
-    foreheadWarning: "⚠️ Warning: Part of Tefillin touches forehead!",
-    centerStatusOk: "Centered",
-    centerStatusOff: "Off-center",
-    hairStatusOk: "On Hair Area",
-    hairStatusErr: "Invalid (Touching Forehead)",
-    detectOk: "Tefillin Box Detected",
-    detectErr: "Not Detected",
+    foreheadWarning: "⬆️ Warning: Tefillin touches forehead!",
     modalTitle: "Halachic Rules for Head Tefillin",
     modalRule1Title: "Horizontal Symmetry",
-    modalRule1Text: "The Shel Rosh box must sit EXACTLY in the middle between your eyes.",
+    modalRule1Text: "The Shel Rosh Tefillin must sit EXACTLY in the middle between your eyes.",
     modalRule2Title: "Strict Hair Growth Boundary",
-    modalRule2Text: "The ENTIRE box and base MUST sit on scalp hair. If even a fraction touches forehead skin, the mitzvah is invalidated!",
-    modalRule3Title: "Real Tefillin Detection",
-    modalRule3Text: "The camera isolates the black Tefillin cube along the center midline and verifies zero forehead overlap."
+    modalRule2Text: "The ENTIRE Tefillin and base MUST sit on scalp hair. If even a fraction touches forehead skin, the mitzvah is invalidated!",
+    modalRule3Title: "Tefillin Detection in Camera",
+    modalRule3Text: "The camera detects the Head Tefillin and verifies that all parts rest strictly on the hair growth area.",
+    bugModalTitle: "🐞 Report an Issue",
+    bugIntro: "Having trouble with detection or stability? You can record a quick 5-second video clip and send technical logs so we can fix it quickly.",
+    recordVideoBtn: "Record 5s Video & Share Logs",
+    recordingText: "Recording clip... ",
+    snapshotBtn: "Capture Snapshot & Logs Only",
+    shareBtn: "Share (WhatsApp / Gmail)",
+    downloadBtn: "Download File",
+    bugSuccess: "Report package ready! You can now share or download."
   }
 };
 
@@ -95,31 +100,33 @@ const guidanceCard = document.getElementById('guidanceCard');
 const directionArrow = document.getElementById('directionArrow');
 const guidanceTitle = document.getElementById('guidanceTitle');
 const guidanceSub = document.getElementById('guidanceSub');
-const detectValue = document.getElementById('detectValue');
-const detectStatus = document.getElementById('detectStatus');
-const horizValue = document.getElementById('horizValue');
-const horizBar = document.getElementById('horizBar');
-const horizStatus = document.getElementById('horizStatus');
-const vertValue = document.getElementById('vertValue');
-const vertBar = document.getElementById('vertBar');
-const vertStatus = document.getElementById('vertStatus');
 const langToggleBtn = document.getElementById('langToggleBtn');
+const modelSelect = document.getElementById('modelSelect');
 const infoBtn = document.getElementById('infoBtn');
 const infoModal = document.getElementById('infoModal');
 const closeModalBtn = document.getElementById('closeModalBtn');
-const toggleMirrorBtn = document.getElementById('toggleMirrorBtn');
 const toggleGuidesBtn = document.getElementById('toggleGuidesBtn');
-const hairlineUpBtn = document.getElementById('hairlineUpBtn');
-const hairlineDownBtn = document.getElementById('hairlineDownBtn');
-const hairlineResetBtn = document.getElementById('hairlineResetBtn');
-const lblAdjustHair = document.getElementById('lblAdjustHair');
+const appSubTitle = document.getElementById('appSubTitle');
+
+// Bug Report Modal Elements
+const bugReportBtn = document.getElementById('bugReportBtn');
+const bugModal = document.getElementById('bugModal');
+const closeBugModalBtn = document.getElementById('closeBugModalBtn');
+const recordBugVideoBtn = document.getElementById('recordBugVideoBtn');
+const recordBugBtnText = document.getElementById('recordBugBtnText');
+const recordingProgress = document.getElementById('recordingProgress');
+const recordingProgressBar = document.getElementById('recordingProgressBar');
+const captureBugSnapshotBtn = document.getElementById('captureBugSnapshotBtn');
+const snapshotBugBtnText = document.getElementById('snapshotBugBtnText');
+const bugNotesInput = document.getElementById('bugNotesInput');
+const bugStatusMsg = document.getElementById('bugStatusMsg');
+const bugExportActions = document.getElementById('bugExportActions');
+const shareBugBtn = document.getElementById('shareBugBtn');
+const downloadBugBtn = document.getElementById('downloadBugBtn');
 
 function updateUIStrings() {
   const lang = i18n[state.currentLang];
-  document.getElementById('lblDetectTitle').innerText = lang.detectTitle;
-  document.getElementById('lblHorizTitle').innerText = lang.horizTitle;
-  document.getElementById('lblVertTitle').innerText = lang.vertTitle;
-  lblAdjustHair.innerText = lang.adjustHairLabel;
+  if (appSubTitle) appSubTitle.innerText = lang.subTitle;
   langToggleBtn.innerText = lang.langBtn;
   document.getElementById('modalTitle').innerText = lang.modalTitle;
   document.getElementById('modalBody').innerHTML = `
@@ -136,6 +143,14 @@ function updateUIStrings() {
       <div><h4>${lang.modalRule3Title}</h4><p>${lang.modalRule3Text}</p></div>
     </div>
   `;
+
+  // Bug Modal Strings
+  document.getElementById('bugModalTitle').innerText = lang.bugModalTitle;
+  document.getElementById('bugIntroText').innerText = lang.bugIntro;
+  recordBugBtnText.innerText = lang.recordVideoBtn;
+  snapshotBugBtnText.innerText = lang.snapshotBtn;
+  document.getElementById('lblShareBug').innerText = lang.shareBtn;
+  document.getElementById('lblDownloadBug').innerText = lang.downloadBtn;
 }
 
 langToggleBtn.addEventListener('click', () => {
@@ -145,8 +160,37 @@ langToggleBtn.addEventListener('click', () => {
   updateUIStrings();
 });
 
+// Model Selection & Persistence
+if (modelSelect) {
+  modelSelect.value = state.selectedModel;
+  modelSelect.addEventListener('change', async (e) => {
+    const chosen = e.target.value;
+    state.selectedModel = chosen;
+    localStorage.setItem('tefillin_model', chosen);
+    statusText.innerText = state.currentLang === 'he' ? `טוען מודל ${chosen}...` : `Loading ${chosen} model...`;
+    statusDot.className = "status-indicator-dot searching";
+    try {
+      await YoloEngine.loadModel(chosen);
+      statusText.innerText = state.currentLang === 'he' ? `מודל ${chosen} מוכן` : `Model ${chosen} active`;
+      console.log(`[App] Model switched to: ${chosen}`);
+    } catch (err) {
+      console.error("[App] Failed to load model:", err);
+    }
+  });
+}
+
 infoBtn.addEventListener('click', () => infoModal.classList.add('open'));
 closeModalBtn.addEventListener('click', () => infoModal.classList.remove('open'));
+
+// Bug Report Modal Controls
+bugReportBtn.addEventListener('click', () => {
+  bugStatusMsg.style.display = 'none';
+  bugExportActions.style.display = 'none';
+  recordingProgress.style.display = 'none';
+  recordingProgressBar.style.width = '0%';
+  bugModal.classList.add('open');
+});
+closeBugModalBtn.addEventListener('click', () => bugModal.classList.remove('open'));
 
 // Video Stream Geometry & Overlay Stabilizer (eliminates 1-2px jitter on mobile cameras)
 const videoStabilizer = TefillinEngine.createGeometryStabilizer({
@@ -156,36 +200,159 @@ const videoStabilizer = TefillinEngine.createGeometryStabilizer({
   maxAlpha: 0.85
 });
 
-toggleMirrorBtn.addEventListener('click', () => {
-  state.isMirrored = !state.isMirrored;
-  videoStabilizer.reset();
-  webcam.classList.toggle('mirrored', state.isMirrored);
-  canvas.classList.toggle('mirrored', state.isMirrored);
-});
-
 toggleGuidesBtn.addEventListener('click', () => {
   state.showGuides = !state.showGuides;
   toggleGuidesBtn.classList.toggle('active', state.showGuides);
 });
 
-// Hairline Calibration Controls
-hairlineUpBtn.addEventListener('click', () => {
-  state.hairlineUserAdjustment += 0.04;
-  videoStabilizer.reset();
-  localStorage.setItem('tefillin_hairline_adj', state.hairlineUserAdjustment.toFixed(2));
+// Bug Reporting Diagnostic System
+let recordedBugMediaBlob = null;
+let recordedBugMediaType = 'video';
+let generatedLogContent = '';
+
+function buildDiagnosticLog(notes = '') {
+  return [
+    '================================================================',
+    '                 TEFILLIN MIRROR BUG REPORT',
+    '================================================================',
+    `Timestamp: ${new Date().toISOString()}`,
+    `User Notes: ${notes || 'None provided'}`,
+    `Active Model: ${state.selectedModel}`,
+    `Language: ${state.currentLang}`,
+    `Mirrored: ${state.isMirrored}`,
+    `Guides Enabled: ${state.showGuides}`,
+    `Canvas Viewport: ${canvas.width}x${canvas.height}`,
+    `Device Pixel Ratio: ${window.devicePixelRatio}`,
+    `User Agent: ${navigator.userAgent}`,
+    '',
+    '----------------------- RECENT LOGS -----------------------',
+    ...diagnosticLogs,
+    '================================================================'
+  ].join('\n');
+}
+
+recordBugVideoBtn.addEventListener('click', async () => {
+  if (!canvas) return;
+  recordBugVideoBtn.disabled = true;
+  captureBugSnapshotBtn.disabled = true;
+  recordingProgress.style.display = 'block';
+  recordingProgressBar.style.width = '0%';
+
+  const lang = i18n[state.currentLang];
+  let secondsLeft = 5;
+  recordBugBtnText.innerText = `${lang.recordingText} (${secondsLeft}s)`;
+
+  try {
+    const stream = canvas.captureStream ? canvas.captureStream(25) : null;
+    let recorder = null;
+    let chunks = [];
+
+    if (stream && typeof MediaRecorder !== 'undefined') {
+      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ? 'video/webm;codecs=vp8' : (MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : '');
+      recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+      recorder.start();
+    }
+
+    const interval = setInterval(() => {
+      secondsLeft--;
+      recordingProgressBar.style.width = `${((5 - secondsLeft) / 5) * 100}%`;
+      if (secondsLeft > 0) {
+        recordBugBtnText.innerText = `${lang.recordingText} (${secondsLeft}s)`;
+      } else {
+        clearInterval(interval);
+        if (recorder && recorder.state !== 'inactive') {
+          recorder.onstop = () => {
+            recordedBugMediaBlob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
+            recordedBugMediaType = 'video';
+            generatedLogContent = buildDiagnosticLog(bugNotesInput.value);
+            finishBugRecording(lang);
+          };
+          recorder.stop();
+        } else {
+          // Fallback snapshot if MediaRecorder is unsupported
+          canvas.toBlob((blob) => {
+            recordedBugMediaBlob = blob;
+            recordedBugMediaType = 'image';
+            generatedLogContent = buildDiagnosticLog(bugNotesInput.value);
+            finishBugRecording(lang);
+          }, 'image/jpeg', 0.9);
+        }
+      }
+    }, 1000);
+  } catch (err) {
+    console.error("Bug recording error:", err);
+    recordBugVideoBtn.disabled = false;
+    captureBugSnapshotBtn.disabled = false;
+    recordBugBtnText.innerText = lang.recordVideoBtn;
+  }
 });
 
-hairlineDownBtn.addEventListener('click', () => {
-  state.hairlineUserAdjustment -= 0.04;
-  videoStabilizer.reset();
-  localStorage.setItem('tefillin_hairline_adj', state.hairlineUserAdjustment.toFixed(2));
+captureBugSnapshotBtn.addEventListener('click', () => {
+  canvas.toBlob((blob) => {
+    recordedBugMediaBlob = blob;
+    recordedBugMediaType = 'image';
+    generatedLogContent = buildDiagnosticLog(bugNotesInput.value);
+    finishBugRecording(i18n[state.currentLang]);
+  }, 'image/jpeg', 0.92);
 });
 
-hairlineResetBtn.addEventListener('click', () => {
-  state.hairlineUserAdjustment = 0;
-  videoStabilizer.reset();
-  localStorage.removeItem('tefillin_hairline_adj');
+function finishBugRecording(lang) {
+  recordBugVideoBtn.disabled = false;
+  captureBugSnapshotBtn.disabled = false;
+  recordBugBtnText.innerText = lang.recordVideoBtn;
+  bugStatusMsg.innerText = lang.bugSuccess;
+  bugStatusMsg.style.display = 'block';
+  bugExportActions.style.display = 'flex';
+}
+
+// Share Bug Report
+shareBugBtn.addEventListener('click', async () => {
+  if (!recordedBugMediaBlob) return;
+  const ext = recordedBugMediaType === 'video' ? 'webm' : 'jpg';
+  const mime = recordedBugMediaType === 'video' ? 'video/webm' : 'image/jpeg';
+  const mediaFile = new File([recordedBugMediaBlob], `tefillin_mirror_bug.${ext}`, { type: mime });
+  const logFile = new File([generatedLogContent], 'tefillin_mirror_logs.txt', { type: 'text/plain' });
+
+  if (navigator.canShare && navigator.canShare({ files: [mediaFile, logFile] })) {
+    try {
+      await navigator.share({
+        title: 'Tefillin Mirror Bug Report',
+        text: 'Tefillin Mirror Diagnostic Logs & Video',
+        files: [mediaFile, logFile]
+      });
+      return;
+    } catch (_) {}
+  }
+
+  // Fallback: trigger download and open mailto
+  triggerDownload(mediaFile, `tefillin_mirror_bug.${ext}`);
+  triggerDownload(logFile, 'tefillin_mirror_logs.txt');
+  const mailSubject = encodeURIComponent("Tefillin Mirror Bug Report");
+  const mailBody = encodeURIComponent("Please find attached the downloaded video and logs.\n\n" + generatedLogContent.substring(0, 1500));
+  window.open(`mailto:drozanes@gmail.com?subject=${mailSubject}&body=${mailBody}`, '_blank');
 });
+
+// Download Bug Report Files
+downloadBugBtn.addEventListener('click', () => {
+  if (!recordedBugMediaBlob) return;
+  const ext = recordedBugMediaType === 'video' ? 'webm' : 'jpg';
+  const mediaFile = new File([recordedBugMediaBlob], `tefillin_mirror_bug.${ext}`);
+  const logFile = new File([generatedLogContent], 'tefillin_mirror_logs.txt', { type: 'text/plain' });
+  triggerDownload(mediaFile, `tefillin_mirror_bug.${ext}`);
+  triggerDownload(logFile, 'tefillin_mirror_logs.txt');
+});
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 const isLocalApp = (typeof window !== 'undefined' && 
     (window.location.protocol === 'capacitor:' || 
@@ -249,8 +416,6 @@ async function onFaceResults(results) {
     directionArrow.innerText = "🔍";
     guidanceTitle.innerText = lang.noFace;
     guidanceSub.innerText = lang.noTefillinSub;
-    detectValue.innerText = lang.detectErr;
-    detectStatus.innerText = lang.noFace;
     ctx.restore();
     return;
   }
@@ -260,10 +425,10 @@ async function onFaceResults(results) {
   const h = canvas.height;
 
   // 1. Extract 3D Geometry from Shared TefillinEngine with temporal stabilization
-  const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, w, h, state.hairlineUserAdjustment, ctx, { stabilizer: videoStabilizer });
+  const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, w, h, 0, ctx, { stabilizer: videoStabilizer });
   if (!geometry) { ctx.restore(); return; }
 
-  // 2. AI Detect Tefillin Ketzitzah via YOLO ONNX Model (DECOUPLED FOR SILKY SMOOTH FPS)
+  // 2. AI Detect Tefillin via YOLO ONNX Model (DECOUPLED FOR SILKY SMOOTH FPS)
   if (!window.isYoloRunning) {
     window.isYoloRunning = true;
     
@@ -305,70 +470,50 @@ async function onFaceResults(results) {
     directionArrow.innerText = "🔳";
     guidanceTitle.innerText = lang.noTefillin;
     guidanceSub.innerText = lang.noTefillinSub;
-    detectValue.innerText = "לא זוהה";
-    detectValue.style.color = "var(--accent-red)";
-    detectStatus.innerText = lang.noTefillinSub;
-
-    horizValue.innerText = "--";
-    horizBar.style.width = "50%";
-    vertValue.innerText = "--";
-    vertBar.style.width = "0%";
   } else {
     state.tefillinFound = true;
-    detectValue.innerText = "קציצה זוהתה ✔️";
-    detectValue.style.color = "var(--accent-green)";
-    detectStatus.innerText = lang.detectOk;
-
     const { isKosher, isCentered, distAboveHairline, horizOffset } = alignment;
 
-    // Vertical Scalp Metric
-    vertValue.innerText = isKosher ? `תקין (${distAboveHairline}px מעל מצח)` : `פסול! (${Math.abs(distAboveHairline)}px על המצח)`;
-    vertBar.style.width = isKosher ? "90%" : "15%";
-    vertStatus.innerText = isKosher ? lang.hairStatusOk : lang.hairStatusErr;
-    vertStatus.style.color = isKosher ? "var(--accent-green)" : "var(--accent-red)";
-
-    // Horizontal Alignment Metric
-    horizValue.innerText = `${horizOffset > 0 ? '+' : ''}${horizOffset}px`;
-    const fillPct = Math.min(Math.max(50 + (horizOffset / (geometry.eyeDist * 0.5)) * 50, 5), 95);
-    horizBar.style.width = `${fillPct}%`;
-    horizStatus.innerText = isCentered ? lang.centerStatusOk : lang.centerStatusOff;
-    horizStatus.style.color = isCentered ? "var(--accent-green)" : "var(--accent-gold)";
-
-    // 6. FINAL STATE SELECTION
+    // 5. Directional Halachic State Guidance with Explicit Movement Arrows
     if (alignment.status === 'CAMERA_TOO_LOW' || alignment.status === 'CAMERA_TOO_HIGH') {
-      // EXTREME CAMERA ANGLE -> ADVISE USER TO HOLD AT EYE LEVEL
       statusDot.className = "status-indicator-dot caution";
-      statusText.innerText = alignment.status === 'CAMERA_TOO_LOW' ? (state.currentLang === 'he' ? "מצלמה נמוכה מדי" : "Camera Too Low") : (state.currentLang === 'he' ? "מצלמה גבוהה מדי" : "Camera Too High");
+      statusText.innerText = alignment.status === 'CAMERA_TOO_LOW' 
+        ? (state.currentLang === 'he' ? "מצלמה נמוכה מדי" : "Camera Too Low") 
+        : (state.currentLang === 'he' ? "מצלמה גבוהה מדי" : "Camera Too High");
       guidanceCard.className = "guidance-card caution";
       directionArrow.innerText = "📐";
-      guidanceTitle.innerText = state.currentLang === 'he' ? "זווית צילום לא תקינה" : "Invalid Camera Angle";
+      guidanceTitle.innerText = state.currentLang === 'he' ? "📐 כווננו את גובה המצלמה" : "📐 Adjust Camera Height";
       guidanceSub.innerText = alignment.direction;
     } else if (!isKosher) {
       // LOWEST EDGE TOUCHES FOREHEAD -> RED ALERT
       statusDot.className = "status-indicator-dot misaligned";
-      statusText.innerText = lang.foreheadWarning;
+      statusText.innerText = state.currentLang === 'he' ? "⬆️ נוגע במצח" : "⬆️ Touches Forehead";
       guidanceCard.className = "guidance-card warning";
       directionArrow.innerText = "⬆️";
-      guidanceTitle.innerText = "פסול: נוגע במצח";
-      guidanceSub.innerHTML = `הקצה התחתון של התפילין נוגע במצח! יש להרים אל מקום השיער. <br><a href="https://www.youtube.com/watch?v=4BEhw4g_OJI" target="_blank" style="color: #ffbba6; text-decoration: underline; margin-top: 8px; display: inline-block;">🎥 מדריך: איך להקטין את הקשר</a>`;
+      guidanceTitle.innerText = state.currentLang === 'he' ? "⬆️ הרימו את התפילין למעלה!" : "⬆️ Move Tefillin UP!";
+      guidanceSub.innerHTML = state.currentLang === 'he' 
+        ? `התפילין נוגעות במצח! יש להרים אל מקום השיער. <br><a href="https://www.youtube.com/watch?v=4BEhw4g_OJI" target="_blank" style="color: #ffbba6; text-decoration: underline; margin-top: 6px; display: inline-block;">🎥 מדריך: איך להקטין את הקשר</a>`
+        : `Tefillin touches forehead! Move up onto hair area.`;
     } else if (alignment.status === 'OFF_CENTER') {
-      // OFF CENTER -> YELLOW ALERT
+      // OFF CENTER -> YELLOW ALERT WITH CLEAR DIRECTION ARROWS
       statusDot.className = "status-indicator-dot caution";
-      statusText.innerText = "לא ממורכז";
+      statusText.innerText = state.currentLang === 'he' ? "לא ממורכז" : "Off-center";
       guidanceCard.className = "guidance-card caution";
-      // Split the direction string to get emoji and text
-      const parts = alignment.direction.split(' ');
-      directionArrow.innerText = parts[0];
-      guidanceTitle.innerText = "יש למרכז";
-      guidanceSub.innerText = alignment.direction;
+      
+      const isMoveLeft = horizOffset > 0;
+      const arrow = isMoveLeft ? "⬅️" : "➡️";
+      directionArrow.innerText = arrow;
+      guidanceTitle.innerText = `${arrow} ${isMoveLeft ? (state.currentLang === 'he' ? "הזיזו את התפילין שמאלה" : "Move Tefillin LEFT") : (state.currentLang === 'he' ? "הזיזו את התפילין ימינה" : "Move Tefillin RIGHT")}`;
+      guidanceSub.innerText = isMoveLeft 
+        ? (state.currentLang === 'he' ? "הזיזו את התפילין שמאלה (לצד שמאל שלכם)" : "Move Tefillin to your left") 
+        : (state.currentLang === 'he' ? "הזיזו את התפילין ימינה (לצד ימין שלכם)" : "Move Tefillin to your right");
     } else if (alignment.warning) {
-      // BORDERLINE KOSHER -> YELLOW ALERT
       statusDot.className = "status-indicator-dot caution";
-      statusText.innerText = "גבולי";
+      statusText.innerText = state.currentLang === 'he' ? "גבולי" : "Borderline";
       guidanceCard.className = "guidance-card caution";
       directionArrow.innerText = "⚠️";
-      guidanceTitle.innerText = "קרוב מאוד למצח";
-      guidanceSub.innerText = "התפילין במקום שיער אך קרובות מאוד לגבול.";
+      guidanceTitle.innerText = state.currentLang === 'he' ? "⚠️ קרוב מאוד למצח" : "⚠️ Very Close to Forehead";
+      guidanceSub.innerText = state.currentLang === 'he' ? "התפילין במקום שיער אך קרובות מאוד לגבול." : "Tefillin rests on hair but very close to border.";
     } else {
       // PERFECT ALIGNMENT -> GREEN
       statusDot.className = "status-indicator-dot aligned";
@@ -385,14 +530,12 @@ async function onFaceResults(results) {
 
 window.addEventListener('DOMContentLoaded', () => {
   updateUIStrings();
-  webcam.classList.toggle('mirrored', state.isMirrored);
-  canvas.classList.toggle('mirrored', state.isMirrored);
   
   // 1. Launch camera and face tracking immediately for instant responsiveness
   initCamera();
 
-  // 2. Load YOLO ONNX neural network in parallel in background
-  YoloEngine.loadModel().catch(err => {
+  // 2. Load saved YOLO ONNX neural network in background
+  YoloEngine.loadModel(state.selectedModel).catch(err => {
     console.error("YOLO model load error:", err);
   });
 });

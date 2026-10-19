@@ -94,7 +94,26 @@ body {
 
 .header-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.model-select {
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent-gold);
+  cursor: pointer;
+  outline: none;
+}
+
+.model-select option {
+  background: var(--bg-surface-elevated);
+  color: var(--text-main);
 }
 
 .btn {
@@ -202,7 +221,7 @@ body {
 
 .guidance-card {
   position: absolute;
-  bottom: 60px;
+  bottom: 20px;
   left: 14px;
   right: 14px;
   display: flex;
@@ -245,13 +264,11 @@ body {
 
 .camera-controls {
   position: absolute;
-  bottom: 12px;
-  left: 10px;
-  right: 10px;
+  top: 14px;
+  left: 14px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
   z-index: 10;
 }
 
@@ -262,7 +279,7 @@ body {
   color: var(--text-muted);
   font-size: 0.75rem;
   font-weight: 600;
-  padding: 7px 10px;
+  padding: 6px 12px;
   border-radius: 20px;
   cursor: pointer;
   text-align: center;
@@ -273,18 +290,6 @@ body {
   color: var(--text-main);
   border-color: var(--accent-gold);
   background: rgba(245, 158, 11, 0.2);
-}
-
-/* Hairline adjustment toolbar */
-.hairline-adjust-box {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(8px);
-  border: 1px solid var(--border-color);
-  padding: 4px 8px;
-  border-radius: 20px;
 }
 
 .adjust-label {

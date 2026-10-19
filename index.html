@@ -38,11 +38,16 @@
         <div class="logo-icon">🪞</div>
         <div class="logo-text">
           <h1>מראת תפילין</h1>
-          <span class="subtext">זיהוי קציצת תפילין + בדיקת אמצע ומקום שיער</span>
+          <span class="subtext" id="appSubTitle">זיהוי תפילין + בדיקת אמצע ומקום שיער</span>
         </div>
       </div>
       <div class="header-actions">
+        <select id="modelSelect" class="btn btn-glass model-select" title="בחר מודל זיהוי / Select AI Model">
+          <option value="uint8">⚡ INT8 (מהיר)</option>
+          <option value="fp16">🎯 FP16 (מדויק)</option>
+        </select>
         <button id="langToggleBtn" class="btn btn-glass">English</button>
+        <button id="bugReportBtn" class="btn btn-glass icon-btn" title="דיווח על בעיה / Report Bug">🐞</button>
         <button id="infoBtn" class="btn btn-glass icon-btn" title="הלכות תפילין">ℹ️</button>
       </div>
     </header>
@@ -50,8 +55,8 @@
     <!-- Camera Viewport & Overlay -->
     <main class="viewport-section">
       <div class="video-container" id="videoContainer">
-        <video id="webcam" playsinline autoplay muted></video>
-        <canvas id="outputCanvas"></canvas>
+        <video id="webcam" class="mirrored" playsinline autoplay muted></video>
+        <canvas id="outputCanvas" class="mirrored"></canvas>
 
         <!-- Dynamic Status Banner -->
         <div class="status-overlay" id="statusOverlay">
@@ -64,61 +69,15 @@
           <div class="direction-arrow" id="directionArrow">🔍</div>
           <div class="guidance-details">
             <h3 id="guidanceTitle">אנא הניחו את התפילין של ראש</h3>
-            <p id="guidanceSub">המערכת מזהה את קציצת התפילין (הקובייה השחורה) מעל המצח...</p>
+            <p id="guidanceSub">המערכת מזהה את התפילין מעל המצח...</p>
           </div>
         </div>
 
         <!-- Interactive Camera Controls Bar -->
         <div class="camera-controls">
-          <button id="toggleMirrorBtn" class="control-pill" title="היפוך מראה">🪞 מראה</button>
           <button id="toggleGuidesBtn" class="control-pill active" title="הצג/הסתר קווי עזר">🎯 קווי עזר</button>
-          
-          <div class="hairline-adjust-box">
-            <span class="adjust-label" id="lblAdjustHair">קו שיער:</span>
-            <button id="hairlineUpBtn" class="adjust-btn" title="העלה את קו השיער למעלה">▲</button>
-            <button id="hairlineDownBtn" class="adjust-btn" title="הורד את קו השיער למטה">▼</button>
-            <button id="hairlineResetBtn" class="adjust-btn reset" title="איפוס קו שיער לברירת מחדל">↺</button>
-          </div>
         </div>
       </div>
-
-      <!-- Real-time Verification Metrics Grid -->
-      <section class="metrics-grid">
-        <!-- Tefillin Detection State -->
-        <div class="metric-card" id="detectionCard">
-          <div class="metric-header">
-            <span class="metric-label" id="lblDetectTitle">זיהוי קציצת תפילין</span>
-            <span class="metric-value" id="detectValue">לא זוהו</span>
-          </div>
-          <span class="metric-status" id="detectStatus">יש לחבוש תפילין מול המצלמה</span>
-        </div>
-
-        <!-- Horizontal Alignment -->
-        <div class="metric-card" id="horizontalCard">
-          <div class="metric-header">
-            <span class="metric-label" id="lblHorizTitle">מרכוז ברוחב (אמצע העיניים)</span>
-            <span class="metric-value" id="horizValue">--</span>
-          </div>
-          <div class="progress-bar-track">
-            <div class="progress-bar-fill" id="horizBar" style="width: 50%;"></div>
-            <div class="progress-center-line"></div>
-          </div>
-          <span class="metric-status" id="horizStatus">ממתין לזיהוי...</span>
-        </div>
-
-        <!-- Vertical Scalp Hairline Check -->
-        <div class="metric-card" id="verticalCard">
-          <div class="metric-header">
-            <span class="metric-label" id="lblVertTitle">מיקום בגובה (מקום שיער vs מצח)</span>
-            <span class="metric-value" id="vertValue">--</span>
-          </div>
-          <div class="progress-bar-track">
-            <div class="progress-bar-fill" id="vertBar" style="width: 0%;"></div>
-            <div class="progress-danger-zone"></div>
-          </div>
-          <span class="metric-status" id="vertStatus">ממתין לזיהוי...</span>
-        </div>
-      </section>
     </main>
 
     <!-- Halachic Guide Drawer -->
@@ -132,9 +91,53 @@
       </div>
     </div>
 
+    <!-- Bug Report Drawer / Modal -->
+    <div class="modal-backdrop" id="bugModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="bugModalTitle">🐞 דיווח על בעיה / Report Bug</h2>
+          <button class="close-btn" id="closeBugModalBtn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p id="bugIntroText" style="font-size: 0.9rem; margin-bottom: 12px; color: var(--text-muted); line-height: 1.4;">
+            נתקלתם בבעיה בזיהוי התפילין או ביציבות? באפשרותכם להקליט סרטון קצר (5 שניות) ולשלוח לוגים טכניים כדי שנוכל לתקן זאת בהקדם.
+          </p>
+          
+          <div class="bug-actions-box" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;">
+            <button id="recordBugVideoBtn" class="btn" style="background: var(--accent-gold); color: #000; font-weight: bold; padding: 12px; font-size: 0.92rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
+              <span>📹</span> <span id="recordBugBtnText">הקלט 5 שניות וידאו ושתף לוגים</span>
+            </button>
+            <div id="recordingProgress" style="display: none; height: 6px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+              <div id="recordingProgressBar" style="height: 100%; width: 0%; background: var(--accent-gold); transition: width 0.1s linear;"></div>
+            </div>
+            
+            <button id="captureBugSnapshotBtn" class="btn btn-glass" style="padding: 10px; font-size: 0.88rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
+              <span>📸</span> <span id="snapshotBugBtnText">צלם תמונת מסך ולוגים בלבד</span>
+            </button>
+          </div>
+
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;" id="lblBugNotes">תיאור קצר (לא חובה):</label>
+            <input type="text" id="bugNotesInput" placeholder="למשל: התפילין במקום הנכון אך זוהו כפסולות" style="width: 100%; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: var(--text-main); font-family: inherit; font-size: 0.85rem;">
+          </div>
+
+          <div id="bugStatusMsg" style="display: none; padding: 10px; border-radius: var(--radius-sm); background: rgba(34, 197, 94, 0.15); border: 1px solid var(--accent-green); color: var(--accent-green); font-size: 0.85rem; margin-bottom: 12px; text-align: center;"></div>
+
+          <div class="bug-export-actions" id="bugExportActions" style="display: none; display: flex; gap: 8px; flex-wrap: wrap;">
+            <button id="shareBugBtn" class="btn" style="flex: 1; background: var(--accent-green); color: #000; font-weight: bold; padding: 10px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <span>📤</span> <span id="lblShareBug">שתף (WhatsApp / Gmail)</span>
+            </button>
+            <button id="downloadBugBtn" class="btn btn-glass" style="flex: 1; padding: 10px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <span>💾</span> <span id="lblDownloadBug">הורד קובץ</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Footer -->
     <footer class="app-footer">
-      <p>מראת תפילין • זיהוי קציצת תפילין מדויק בזמן אמת</p>
+      <p>מראת תפילין • זיהוי תפילין מדויק בזמן אמת</p>
     </footer>
     <!-- Shared Algorithm Engine -->
     <script src="tefillin_engine.js"></script>
