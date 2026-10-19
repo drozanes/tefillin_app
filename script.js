@@ -2,21 +2,44 @@
  * Real-Time Tefillin Detector & Strict Halachic Alignment Engine
  */
 
-// Diagnostic Logging Ring Buffer (records up to 150 recent events for bug reporting)
-const diagnosticLogs = [];
-const MAX_DIAGNOSTIC_LOGS = 150;
+// Diagnostic Logging: Keeps permanent startup logs from app boot + rolling recent buffer
+const startupLogs = [];
+const MAX_STARTUP_LOGS = 50;
+const recentLogs = [];
+const MAX_RECENT_LOGS = 150;
+
 function logDiagnostic(level, ...args) {
   const timestamp = new Date().toISOString().substring(11, 23);
-  const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
-  diagnosticLogs.push(`[${timestamp}] [${level}] ${msg}`);
-  if (diagnosticLogs.length > MAX_DIAGNOSTIC_LOGS) diagnosticLogs.shift();
+  const msg = args.map(a => {
+    if (a instanceof Error) return `${a.message}\n${a.stack}`;
+    if (typeof a === 'object') {
+      try { return JSON.stringify(a); } catch (_) { return String(a); }
+    }
+    return String(a);
+  }).join(' ');
+  const formatted = `[${timestamp}] [${level}] ${msg}`;
+
+  if (startupLogs.length < MAX_STARTUP_LOGS) {
+    startupLogs.push(formatted);
+  }
+  recentLogs.push(formatted);
+  if (recentLogs.length > MAX_RECENT_LOGS) recentLogs.shift();
 }
+
 const origConsoleLog = console.log;
 const origConsoleWarn = console.warn;
 const origConsoleError = console.error;
 console.log = (...args) => { origConsoleLog(...args); logDiagnostic('INFO', ...args); };
 console.warn = (...args) => { origConsoleWarn(...args); logDiagnostic('WARN', ...args); };
 console.error = (...args) => { origConsoleError(...args); logDiagnostic('ERROR', ...args); };
+
+// Capture unhandled errors and promise rejections
+window.addEventListener('error', (event) => {
+  logDiagnostic('UNCAUGHT', event.message, `at ${event.filename}:${event.lineno}`);
+});
+window.addEventListener('unhandledrejection', (event) => {
+  logDiagnostic('UNHANDLED_REJECTION', event.reason ? (event.reason.message || event.reason) : 'Unknown promise rejection');
+});
 
 const state = {
   currentLang: 'he',
@@ -225,8 +248,11 @@ function buildDiagnosticLog(notes = '') {
     `Device Pixel Ratio: ${window.devicePixelRatio}`,
     `User Agent: ${navigator.userAgent}`,
     '',
-    '----------------------- RECENT LOGS -----------------------',
-    ...diagnosticLogs,
+    '----------------------- STARTUP LOGS (FROM APP BOOT) -----------------------',
+    ...startupLogs,
+    '',
+    '----------------------- RECENT LOGS (LAST 150 EVENTS) -----------------------',
+    ...recentLogs,
     '================================================================'
   ].join('\n');
 }
