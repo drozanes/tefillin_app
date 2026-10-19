@@ -255,20 +255,23 @@ const YoloEngine = (function() {
         
         // Mutex queue: Ensure preprocess, session.run, and postprocess execute sequentially
         const queuedTask = inferenceQueue.then(async () => {
+            let tensor = null;
+            let results = null;
             try {
                 const startPre = performance.now();
-                const { tensor, scale, padX, padY } = preprocess(canvas);
+                const prep = preprocess(canvas);
+                tensor = prep.tensor;
                 const endPre = performance.now();
                 
                 const feeds = {};
                 feeds[session.inputNames[0]] = tensor;
                 
                 const startInf = performance.now();
-                const results = await session.run(feeds);
+                results = await session.run(feeds);
                 const endInf = performance.now();
                 
                 const outputTensor = results[session.outputNames[0]];
-                const finalBox = postprocess(outputTensor, scale, padX, padY);
+                const finalBox = postprocess(outputTensor, prep.scale, prep.padX, prep.padY);
                 
                 // Throttle debug logging to avoid console spam
                 if (Math.random() < 0.05) {
@@ -280,6 +283,18 @@ const YoloEngine = (function() {
             } catch (err) {
                 console.warn("[YOLO Engine] Inference execution failed:", err);
                 return null;
+            } finally {
+                // Free GPU buffers and WASM heap to eliminate memory leaks
+                if (tensor && typeof tensor.dispose === 'function') {
+                    try { tensor.dispose(); } catch (_) {}
+                }
+                if (results) {
+                    for (const key in results) {
+                        if (results[key] && typeof results[key].dispose === 'function') {
+                            try { results[key].dispose(); } catch (_) {}
+                        }
+                    }
+                }
             }
         });
 
