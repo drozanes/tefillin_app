@@ -26,14 +26,23 @@
   padding: 0;
 }
 
+html {
+  width: 100%;
+  min-height: 100%;
+}
+
 body {
+  width: 100%;
+  min-height: 100vh;
   background-color: var(--bg-primary);
   color: var(--text-main);
   font-family: var(--font-family);
-  min-height: 100vh;
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  margin: 0;
+  padding: 0;
   overflow-x: hidden;
 }
 
@@ -41,6 +50,7 @@ body {
   width: 100%;
   max-width: 520px;
   min-height: 100vh;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   background-color: var(--bg-primary);
