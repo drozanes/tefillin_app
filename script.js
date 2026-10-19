@@ -566,24 +566,9 @@ function triggerDownload(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-const isLocalApp = (typeof window !== 'undefined' && 
-    (window.location.protocol === 'capacitor:' || 
-     window.location.protocol === 'file:' || 
-     window.Capacitor !== undefined ||
-     window.location.hostname === 'localhost'));
-
-// Setup MediaPipe Face Mesh
+// Setup MediaPipe Face Mesh using the verified official CDN distribution
 const faceMesh = new FaceMesh({
-  locateFile: (file) => {
-    if (isLocalApp) {
-      try {
-        return new URL(`vendor/mediapipe/${file}`, window.location.href).href;
-      } catch (_) {
-        return `vendor/mediapipe/${file}`;
-      }
-    }
-    return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`;
-  }
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`
 });
 
 faceMesh.setOptions({

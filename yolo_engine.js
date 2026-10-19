@@ -95,21 +95,7 @@ const YoloEngine = (function() {
 
     // Configure WASM runtime paths & SIMD
     if (typeof ort !== 'undefined' && ort.env && ort.env.wasm) {
-        const isLocalApp = (typeof window !== 'undefined' && 
-            (window.location.protocol === 'capacitor:' || 
-             window.location.protocol === 'file:' || 
-             window.Capacitor !== undefined ||
-             window.location.hostname === 'localhost'));
-        
-        if (isLocalApp) {
-            try {
-                ort.env.wasm.wasmPaths = new URL('vendor/onnx/', window.location.href).href;
-            } catch (_) {
-                ort.env.wasm.wasmPaths = 'vendor/onnx/';
-            }
-        } else {
-            ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
-        }
+        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
         ort.env.wasm.numThreads = 1;
         ort.env.wasm.simd = true;
     }
