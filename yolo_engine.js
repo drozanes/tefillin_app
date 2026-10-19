@@ -167,6 +167,8 @@ const YoloEngine = (function() {
         initWorker();
 
         if (!useFallback && worker) {
+            isWorkerReady = false;
+            isBusy = true;
             const absolutePath = new URL(resolved.path, window.location.href).href;
             return new Promise((resolve, reject) => {
                 pendingLoadResolver = { resolve, reject };

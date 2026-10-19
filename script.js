@@ -309,13 +309,17 @@ recordBugVideoBtn.addEventListener('click', async () => {
   let secondsLeft = 5;
   recordBugBtnText.innerText = `${t.recordingText} (${secondsLeft}s)`;
 
-  // Continuously paint webcam frames during recording if FaceMesh results are pending
-  let liveRenderTimer = null;
-  if (!hasFirstFaceResult) {
-    liveRenderTimer = setInterval(() => {
-      ensureCanvasHasFrame();
-    }, 40);
-  }
+  // Continuously paint webcam frames during recording if FaceMesh stalls or is delayed
+  const liveRenderTimer = setInterval(() => {
+    const now = performance.now();
+    if (now - lastFaceResultTime > 80 && webcam.readyState >= 2 && webcam.videoWidth) {
+      if (canvas.width !== webcam.videoWidth || canvas.height !== webcam.videoHeight) {
+        canvas.width = webcam.videoWidth;
+        canvas.height = webcam.videoHeight;
+      }
+      ctx.drawImage(webcam, 0, 0, canvas.width, canvas.height);
+    }
+  }, 40);
 
   try {
     const stream = canvas.captureStream ? canvas.captureStream(25) : null;
@@ -580,6 +584,56 @@ faceMesh.setOptions({
 
 faceMesh.onResults(onFaceResults);
 
+let isFrameProcessing = false;
+let lastFrameSentTime = 0;
+let lastFaceResultTime = 0;
+let cameraLoopActive = false;
+
+function pumpCameraFrame() {
+  if (!cameraLoopActive) return;
+
+  // 1. ALWAYS schedule the next frame first so the loop never dies under any circumstance
+  if ('requestVideoFrameCallback' in webcam) {
+    webcam.requestVideoFrameCallback(pumpCameraFrame);
+  } else {
+    requestAnimationFrame(pumpCameraFrame);
+  }
+
+  // 2. Auto-resume if Android WebView paused the HTML5 video element
+  if (webcam.paused) {
+    webcam.play().catch(() => {});
+    return;
+  }
+
+  // 3. Verify valid video dimensions
+  if (webcam.readyState < 2 || !webcam.videoWidth || !webcam.videoHeight) {
+    return;
+  }
+
+  const now = performance.now();
+
+  // 4. Watchdog: if FaceMesh processing exceeded 1500ms, force-recover the pipeline
+  if (isFrameProcessing && (now - lastFrameSentTime > 1500)) {
+    console.warn(`[Camera Watchdog] FaceMesh frame processing exceeded ${(now - lastFrameSentTime).toFixed(0)}ms. Force-recovering pipeline.`);
+    isFrameProcessing = false;
+  }
+
+  if (isFrameProcessing) return;
+
+  isFrameProcessing = true;
+  lastFrameSentTime = now;
+
+  // 5. Send frame to FaceMesh with timeout guarantee
+  Promise.race([
+    faceMesh.send({ image: webcam }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("FaceMesh frame timeout")), 1200))
+  ]).catch(frameErr => {
+    console.warn("[FaceMesh Frame Warning]:", frameErr.message || frameErr);
+  }).finally(() => {
+    isFrameProcessing = false;
+  });
+}
+
 async function initCamera() {
   const t = getI18n();
   statusText.innerText = t.cameraStarting;
@@ -596,29 +650,23 @@ async function initCamera() {
   webcam.addEventListener('loadeddata', onCameraFeedActive, { once: true });
   webcam.addEventListener('playing', onCameraFeedActive, { once: true });
 
-  let isFrameProcessing = false;
-
   try {
-    const camera = new Camera(webcam, {
-      onFrame: async () => {
-        if (isFrameProcessing) return;
-        if (webcam.readyState < 2 || !webcam.videoWidth || !webcam.videoHeight) {
-          return;
-        }
-        isFrameProcessing = true;
-        try {
-          await faceMesh.send({ image: webcam });
-        } catch (frameErr) {
-          console.error("[FaceMesh Frame Error]:", frameErr);
-        } finally {
-          isFrameProcessing = false;
-        }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'user',
+        width: { ideal: 640 },
+        height: { ideal: 480 }
       },
-      width: 640,
-      height: 480
+      audio: false
     });
-    await camera.start();
+
+    webcam.srcObject = stream;
+    await webcam.play();
     onCameraFeedActive();
+
+    cameraLoopActive = true;
+    pumpCameraFrame();
+    console.log("[Camera] Native camera pipeline started and streaming.");
   } catch (err) {
     console.error("Camera startup error:", err);
     statusText.innerText = "שגיאה במצלמה: " + (err.message || err);
@@ -632,6 +680,7 @@ let yoloCtx = null;
 
 async function onFaceResults(results) {
   hasFirstFaceResult = true;
+  lastFaceResultTime = performance.now();
   const vw = webcam.videoWidth || 640;
   const vh = webcam.videoHeight || 480;
   if (canvas.width !== vw || canvas.height !== vh) {

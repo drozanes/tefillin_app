@@ -26,6 +26,7 @@ const MODEL_HEIGHT = 640;
 let session = null;
 let activeModelKey = null;
 let activeModelPath = null;
+let isLoadingSession = false;
 
 let offscreenCanvas = null;
 let offscreenCtx = null;
@@ -36,47 +37,57 @@ async function initSession(modelPath, modelKey) {
         return { success: true, key: activeModelKey };
     }
 
-    if (!offscreenCanvas && typeof OffscreenCanvas !== 'undefined') {
-        offscreenCanvas = new OffscreenCanvas(MODEL_WIDTH, MODEL_HEIGHT);
-        offscreenCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
-    }
-    if (!floatBuf) {
-        floatBuf = new Float32Array(3 * MODEL_WIDTH * MODEL_HEIGHT);
-    }
-
-    activeModelPath = modelPath;
-    activeModelKey = modelKey;
-
-    let sessionInstance = null;
-
-    // Try WebGPU first, then WASM SIMD, then default
+    isLoadingSession = true;
     try {
-        sessionInstance = await ort.InferenceSession.create(modelPath, { executionProviders: ['webgpu'] });
-    } catch (_) {
+        if (!offscreenCanvas && typeof OffscreenCanvas !== 'undefined') {
+            offscreenCanvas = new OffscreenCanvas(MODEL_WIDTH, MODEL_HEIGHT);
+            offscreenCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
+        }
+        if (!floatBuf) {
+            floatBuf = new Float32Array(3 * MODEL_WIDTH * MODEL_HEIGHT);
+        }
+
+        activeModelPath = modelPath;
+        activeModelKey = modelKey;
+
+        // Cleanly dispose previous session if exists
+        if (session && typeof session.release === 'function') {
+            try { await session.release(); } catch (_) {}
+        }
+
+        let sessionInstance = null;
+
+        // Try WebGPU first, then WASM SIMD, then default
         try {
-            sessionInstance = await ort.InferenceSession.create(modelPath, { executionProviders: ['wasm'] });
-        } catch (__) {
-            sessionInstance = await ort.InferenceSession.create(modelPath);
+            sessionInstance = await ort.InferenceSession.create(modelPath, { executionProviders: ['webgpu'] });
+        } catch (_) {
+            try {
+                sessionInstance = await ort.InferenceSession.create(modelPath, { executionProviders: ['wasm'] });
+            } catch (__) {
+                sessionInstance = await ort.InferenceSession.create(modelPath);
+            }
         }
-    }
 
-    session = sessionInstance;
+        session = sessionInstance;
 
-    // Model warmup to compile JIT shaders / WASM kernels
-    try {
-        const dummy = new ort.Tensor('float32', new Float32Array(3 * MODEL_WIDTH * MODEL_HEIGHT), [1, 3, MODEL_HEIGHT, MODEL_WIDTH]);
-        const feeds = {};
-        feeds[session.inputNames[0]] = dummy;
-        const warmupRes = await session.run(feeds);
-        dummy.dispose();
-        for (const k in warmupRes) {
-            if (warmupRes[k] && typeof warmupRes[k].dispose === 'function') warmupRes[k].dispose();
+        // Model warmup to compile JIT shaders / WASM kernels
+        try {
+            const dummy = new ort.Tensor('float32', new Float32Array(3 * MODEL_WIDTH * MODEL_HEIGHT), [1, 3, MODEL_HEIGHT, MODEL_WIDTH]);
+            const feeds = {};
+            feeds[session.inputNames[0]] = dummy;
+            const warmupRes = await session.run(feeds);
+            dummy.dispose();
+            for (const k in warmupRes) {
+                if (warmupRes[k] && typeof warmupRes[k].dispose === 'function') warmupRes[k].dispose();
+            }
+        } catch (wErr) {
+            console.warn("[YOLO Worker] Warmup warning:", wErr);
         }
-    } catch (wErr) {
-        console.warn("[YOLO Worker] Warmup warning:", wErr);
-    }
 
-    return { success: true, key: activeModelKey };
+        return { success: true, key: activeModelKey };
+    } finally {
+        isLoadingSession = false;
+    }
 }
 
 function preprocess(bitmap, w, h) {
@@ -161,7 +172,7 @@ self.onmessage = async (e) => {
         }
     } else if (msg.type === 'detect') {
         const { bitmap, w, h } = msg;
-        if (!session) {
+        if (!session || isLoadingSession) {
             if (bitmap && typeof bitmap.close === 'function') bitmap.close();
             self.postMessage({ type: 'detected', box: null });
             return;
