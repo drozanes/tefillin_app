@@ -89,8 +89,25 @@ const YoloEngine = (function() {
             }
         }
 
-        // 6. Fallback default
-        return { key: 'fp16', path: 'models/best_fp16.onnx' };
+        // 6. Fallback default (uint8 is ~2.3x faster than fp16 with 128ms warmup)
+        return { key: 'uint8', path: 'models/best_uint8.onnx' };
+    }
+
+    // Configure WASM runtime paths & SIMD
+    if (typeof ort !== 'undefined' && ort.env && ort.env.wasm) {
+        const isLocalApp = (typeof window !== 'undefined' && 
+            (window.location.protocol === 'capacitor:' || 
+             window.location.protocol === 'file:' || 
+             window.Capacitor !== undefined ||
+             window.location.hostname === 'localhost'));
+        
+        if (isLocalApp) {
+            ort.env.wasm.wasmPaths = 'vendor/onnx/';
+        } else {
+            ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+        }
+        ort.env.wasm.numThreads = 1;
+        ort.env.wasm.simd = true;
     }
 
     // Reusable preprocessing resources (avoid GC pressure on every frame)
@@ -119,11 +136,23 @@ const YoloEngine = (function() {
         activeModelPath = resolved.path;
         activeModelKey = resolved.key;
 
-        // Use hardware acceleration (WebGPU / WebGL) with WASM fallback
+        // Use WebGPU if available, or fast multiplatform WASM SIMD.
+        // Avoid WebGL here because WebGL does not support integer-quantized uint8 models and causes slow fallback.
         session = await ort.InferenceSession.create(resolved.path, { 
-            executionProviders: ['webgpu', 'webgl', 'wasm'] 
+            executionProviders: ['webgpu', 'wasm'] 
         });
         
+        // Immediate Warmup: compile WASM JIT and allocate internal memory ahead of time
+        try {
+            const dummy = new ort.Tensor('float32', new Float32Array(3 * modelWidth * modelHeight), [1, 3, modelHeight, modelWidth]);
+            const feeds = {};
+            feeds[session.inputNames[0]] = dummy;
+            await session.run(feeds);
+            console.log(`[YOLO Engine] Model warmed up and ready for instant inference.`);
+        } catch (wErr) {
+            console.warn("[YOLO Engine] Warmup warning:", wErr);
+        }
+
         console.log(`[YOLO Engine] Model loaded successfully: ${resolved.key} (${resolved.path})`);
         return session;
     }

@@ -122,9 +122,14 @@ const TefillinEngine = (function () {
     let lastVisualRatio = null;
     let missingVisualCount = 0;
 
+    let headRelBox = null;
+    let consecutiveMissCount = 0;
+
     function reset() {
       prevGeometry = null;
       prevBox = null;
+      headRelBox = null;
+      consecutiveMissCount = 0;
       lastVisualRatio = null;
       missingVisualCount = 0;
     }
@@ -228,37 +233,118 @@ const TefillinEngine = (function () {
       return stabilized;
     }
 
-    function stabilizeBox(winner) {
-      if (!winner) {
-        prevBox = null;
-        return null;
-      }
-      if (!prevBox) {
-        prevBox = { ...winner };
-        return winner;
-      }
-      const dist = Math.hypot(winner.x - prevBox.x, winner.y - prevBox.y);
-      if (dist <= deadbandPx * 1.2) {
-        return {
+    function stabilizeBox(winner, geometry) {
+      if (!geometry) {
+        // Fallback to legacy 2D pixel smoothing if geometry is omitted
+        if (!winner) {
+          prevBox = null;
+          return null;
+        }
+        if (!prevBox) {
+          prevBox = { ...winner };
+          return winner;
+        }
+        const dist = Math.hypot(winner.x - prevBox.x, winner.y - prevBox.y);
+        if (dist <= deadbandPx * 1.2) {
+          return {
+            ...winner,
+            x: prevBox.x,
+            y: prevBox.y,
+            boxWidth: prevBox.boxWidth,
+            boxHeight: prevBox.boxHeight,
+            bottomY: prevBox.bottomY
+          };
+        }
+        const alpha = dist > 40 ? 0.85 : 0.35;
+        const stabBox = {
           ...winner,
-          x: prevBox.x,
-          y: prevBox.y,
-          boxWidth: prevBox.boxWidth,
-          boxHeight: prevBox.boxHeight,
-          bottomY: prevBox.bottomY
+          x: prevBox.x + alpha * (winner.x - prevBox.x),
+          y: prevBox.y + alpha * (winner.y - prevBox.y),
+          boxWidth: prevBox.boxWidth + alpha * (winner.boxWidth - prevBox.boxWidth),
+          boxHeight: prevBox.boxHeight + alpha * (winner.boxHeight - prevBox.boxHeight),
+          bottomY: prevBox.bottomY + alpha * (winner.bottomY - prevBox.bottomY)
         };
+        prevBox = stabBox;
+        return stabBox;
       }
-      const alpha = dist > 40 ? 0.85 : 0.35;
-      const stabBox = {
-        ...winner,
-        x: prevBox.x + alpha * (winner.x - prevBox.x),
-        y: prevBox.y + alpha * (winner.y - prevBox.y),
-        boxWidth: prevBox.boxWidth + alpha * (winner.boxWidth - prevBox.boxWidth),
-        boxHeight: prevBox.boxHeight + alpha * (winner.boxHeight - prevBox.boxHeight),
-        bottomY: prevBox.bottomY + alpha * (winner.bottomY - prevBox.bottomY)
+
+      // HEAD-ANCHORED REAL-TIME TRACKING (Zero Lag on Head Movement)
+      const anchor = geometry.glabellaPt;
+      const eyeDist = Math.max(10, geometry.eyeDist);
+      const uEye = geometry.uEye;
+      const uUp = geometry.uUp;
+
+      if (winner) {
+        consecutiveMissCount = 0;
+        const dx = winner.x - anchor.x;
+        const dy = winner.y - anchor.y;
+
+        // Project winner into Head Space coordinates:
+        // rawRelX: offset along eye axis (positive towards left eye)
+        const rawRelX = (dx * uEye.x + dy * uEye.y) / eyeDist;
+        // rawRelY: offset along up axis (positive towards top of head)
+        const rawRelY = (dx * uUp.x + dy * uUp.y) / eyeDist;
+        const rawRelW = winner.boxWidth / eyeDist;
+        const rawRelH = winner.boxHeight / eyeDist;
+
+        if (!headRelBox) {
+          headRelBox = {
+            relX: rawRelX,
+            relY: rawRelY,
+            relW: rawRelW,
+            relH: rawRelH,
+            conf: winner.confidence || 0.8
+          };
+        } else {
+          // Deadband on head-relative displacement (filters YOLO jitter without lagging behind head movement)
+          const dRelX = rawRelX - headRelBox.relX;
+          const dRelY = rawRelY - headRelBox.relY;
+          const dDist = Math.hypot(dRelX, dRelY);
+
+          // 0.018 * eyeDist is ~2px of movement on the forehead
+          const relDeadband = 0.018;
+          if (dDist > relDeadband) {
+            // When user adjusts tefillin on their head, update relative position smoothly
+            const alpha = dDist > 0.12 ? 0.85 : 0.45;
+            headRelBox.relX += alpha * dRelX;
+            headRelBox.relY += alpha * dRelY;
+            headRelBox.relW += alpha * (rawRelW - headRelBox.relW);
+            headRelBox.relH += alpha * (rawRelH - headRelBox.relH);
+            headRelBox.conf = winner.confidence || headRelBox.conf;
+          }
+        }
+      } else {
+        // No tefillin detected by YOLO this frame
+        consecutiveMissCount++;
+        // If tefillin is absent for more than 8 consecutive frames, clear tracking
+        if (consecutiveMissCount > 8) {
+          headRelBox = null;
+          return null;
+        }
+      }
+
+      if (!headRelBox) return null;
+
+      // Project Head-Relative box onto the CURRENT 30-60 FPS head position
+      const currX = anchor.x + (headRelBox.relX * uEye.x + headRelBox.relY * uUp.x) * eyeDist;
+      const currY = anchor.y + (headRelBox.relX * uEye.y + headRelBox.relY * uUp.y) * eyeDist;
+      const currW = headRelBox.relW * eyeDist;
+      const currH = headRelBox.relH * eyeDist;
+
+      // Lowest edge in head space (pointing down the forehead, i.e., -uUp)
+      const bottomY = currY - uUp.y * (currH / 2);
+
+      return {
+        x: currX,
+        y: currY,
+        boxWidth: currW,
+        boxHeight: currH,
+        leftX: currX - currW / 2,
+        rightX: currX + currW / 2,
+        topY: currY - currH / 2,
+        bottomY: bottomY,
+        confidence: headRelBox.conf
       };
-      prevBox = stabBox;
-      return stabBox;
     }
 
     return {

@@ -187,9 +187,20 @@ hairlineResetBtn.addEventListener('click', () => {
   localStorage.removeItem('tefillin_hairline_adj');
 });
 
+const isLocalApp = (typeof window !== 'undefined' && 
+    (window.location.protocol === 'capacitor:' || 
+     window.location.protocol === 'file:' || 
+     window.Capacitor !== undefined ||
+     window.location.hostname === 'localhost'));
+
 // Setup MediaPipe Face Mesh
 const faceMesh = new FaceMesh({
-  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  locateFile: (file) => {
+    if (isLocalApp) {
+      return `vendor/mediapipe/${file}`;
+    }
+    return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+  }
 });
 
 faceMesh.setOptions({
@@ -215,6 +226,10 @@ async function initCamera() {
     console.error("Camera startup error:", err);
   }
 }
+
+// Reusable offscreen canvas for YOLO inference (eliminates per-frame DOM allocation & GC lag)
+let yoloCanvas = null;
+let yoloCtx = null;
 
 async function onFaceResults(results) {
   canvas.width = webcam.videoWidth || 640;
@@ -252,13 +267,19 @@ async function onFaceResults(results) {
   if (!window.isYoloRunning) {
     window.isYoloRunning = true;
     
-    // Clone the current frame so the async YOLO doesn't read the NEXT frame's pixels midway
-    const offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = w;
-    offscreenCanvas.height = h;
-    offscreenCanvas.getContext('2d', { willReadFrequently: true }).drawImage(canvas, 0, 0);
+    // Reuse static canvas across frames to eliminate memory churn
+    if (!yoloCanvas) {
+      yoloCanvas = document.createElement('canvas');
+      yoloCanvas.width = w;
+      yoloCanvas.height = h;
+      yoloCtx = yoloCanvas.getContext('2d', { willReadFrequently: true });
+    } else if (yoloCanvas.width !== w || yoloCanvas.height !== h) {
+      yoloCanvas.width = w;
+      yoloCanvas.height = h;
+    }
+    yoloCtx.drawImage(canvas, 0, 0, w, h);
 
-    YoloEngine.detect(offscreenCanvas).then(box => {
+    YoloEngine.detect(yoloCanvas).then(box => {
       window.lastYoloBox = box;
       window.isYoloRunning = false;
     }).catch(err => {
@@ -267,7 +288,8 @@ async function onFaceResults(results) {
     });
   }
   const rawWinner = window.lastYoloBox || null;
-  const winner = videoStabilizer.stabilizeBox(rawWinner);
+  // Head-Anchored Real-Time Tracking: projects box synchronously with live head landmarks at 30-60 FPS
+  const winner = videoStabilizer.stabilizeBox(rawWinner, geometry);
 
   // 3. Evaluate Halachic Alignment Status
   const alignment = TefillinEngine.evaluateAlignment(winner, geometry);

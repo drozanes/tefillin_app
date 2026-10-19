@@ -17,6 +17,8 @@ FILES = [
     (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh_solution_simd_wasm_bin.wasm'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh_solution_simd_wasm_bin.wasm'),
     (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh.binarypb'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.binarypb'),
     (os.path.join(VENDOR_DIR, 'onnx', 'ort.min.js'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js'),
+    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd.wasm'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort-wasm-simd.wasm'),
+    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm.wasm'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort-wasm.wasm'),
     (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd-threaded.wasm'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm'),
     (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd-threaded.jsep.wasm'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm'),
     (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd-threaded.jsep.mjs'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs'),
