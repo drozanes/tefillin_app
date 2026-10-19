@@ -665,20 +665,19 @@ async function onFaceResults(results) {
   const geometry = TefillinEngine.analyzeFaceGeometry(landmarks, w, h, 0, ctx, { stabilizer: videoStabilizer });
   if (!geometry) { ctx.restore(); return; }
 
-  // 2. AI Detect Tefillin via YOLO ONNX Model (throttled to 4Hz; Head-anchored tracking handles 60FPS)
+  // 2. AI Detect Tefillin via YOLO ONNX Model in background worker (Zero main-thread blocking)
   const now = performance.now();
   if (!window.lastYoloTime) window.lastYoloTime = 0;
   
-  if (!window.isYoloRunning && (now - window.lastYoloTime >= 250)) {
-    window.isYoloRunning = true;
+  if (!YoloEngine.isRunning() && (now - window.lastYoloTime >= 350)) {
     window.lastYoloTime = now;
 
     YoloEngine.detect(canvas).then(box => {
-      window.lastYoloBox = box;
-      window.isYoloRunning = false;
+      if (box !== undefined) {
+        window.lastYoloBox = box;
+      }
     }).catch(err => {
       console.error("YOLO Error:", err);
-      window.isYoloRunning = false;
     });
   }
   const rawWinner = window.lastYoloBox || null;
