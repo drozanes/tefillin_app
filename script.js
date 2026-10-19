@@ -41,8 +41,9 @@ window.addEventListener('unhandledrejection', (event) => {
   logDiagnostic('UNHANDLED_REJECTION', event.reason ? (event.reason.message || event.reason) : 'Unknown promise rejection');
 });
 
+const savedLang = localStorage.getItem('tefillin_lang');
 const state = {
-  currentLang: 'he',
+  currentLang: savedLang || 'he',
   isMirrored: true, // Always mirrored (behaves like standard selfie camera)
   showGuides: true,
   tefillinFound: false,
@@ -50,68 +51,13 @@ const state = {
   selectedModel: localStorage.getItem('tefillin_model') || (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.defaultModel : 'uint8')
 };
 
-const i18n = {
-  he: {
-    appTitle: "מראת תפילין",
-    subTitle: "זיהוי תפילין + בדיקת אמצע ומקום שיער",
-    langBtn: "English",
-    initCamera: "מפעיל מצלמה וזיהוי...",
-    noFace: "לא זוהו פנים בפריים",
-    noTefillin: "⚠️ לא זוהו תפילין על הראש!",
-    noTefillinSub: "חבשו את התפילין של ראש מעל המצח כדי שהמערכת תזהה אותן.",
-    moveLeft: "⬅️ הזיזו את התפילין שמאלה (לצד שמאל שלכם)",
-    moveRight: "➡️ הזיזו את התפילין ימינה (לצד ימין שלכם)",
-    moveUp: "⬆️ הרימו את התפילין למעלה! (התפילין ירדו למצח)",
-    perfect: "✨ התפילין מונחות כהלכה!",
-    perfectSub: "התפילין במרכז המדויק ומעל קו השיער.",
-    foreheadWarning: "⬆️ אזהרה: התפילין נוגעות במצח!",
-    modalTitle: "הלכות מקום הנחת תפילין של ראש",
-    modalRule1Title: "מקום הנחה ברוחב (אמצע)",
-    modalRule1Text: "תפילין של ראש חייבות להיות מכוונות באמצע ממש בין שתי העיניים. חריגה לצדדים פוסלת את המצווה.",
-    modalRule2Title: "מקום הנחה בגובה (כל התפילין במקום שיער)",
-    modalRule2Text: "התפילין והמעברתא חייבות לשבת כולן במקום ששיער ראשו צומח. אם ירדה אפילו מקצת התפילין על המצח - אינו יוצא ידי חובה וברכתו לבטלה!",
-    modalRule3Title: "זיהוי התפילין במצלמה",
-    modalRule3Text: "המערכת מזהה את התפילין במרכז המצח, ומוודאת שכל שטח התפילין מונח מעל שורשי השיער.",
-    bugModalTitle: "🐞 דיווח על בעיה",
-    bugIntro: "נתקלתם בבעיה בזיהוי התפילין או ביציבות? באפשרותכם להקליט סרטון קצר (5 שניות) ולשלוח לוגים טכניים כדי שנוכל לתקן זאת בהקדם.",
-    recordVideoBtn: "הקלט 5 שניות וידאו ושתף לוגים",
-    recordingText: "מקליט וידאו... ",
-    snapshotBtn: "צלם תמונת מסך ולוגים בלבד",
-    shareBtn: "שתף (WhatsApp / Gmail)",
-    downloadBtn: "הורד קובץ",
-    bugSuccess: "הדוח מוכן! ניתן לשתף או להוריד כעת."
-  },
-  en: {
-    appTitle: "Tefillin Mirror",
-    subTitle: "Tefillin Detection & Halachic Alignment",
-    langBtn: "עברית",
-    initCamera: "Initializing camera...",
-    noFace: "No face detected in frame",
-    noTefillin: "⚠️ Tefillin NOT Detected on Head!",
-    noTefillinSub: "Put on your Head Tefillin above forehead to detect.",
-    moveLeft: "⬅️ Move Tefillin LEFT (Your Left)",
-    moveRight: "➡️ Move Tefillin RIGHT (Your Right)",
-    moveUp: "⬆️ Lift Tefillin UP! (Slipped onto forehead)",
-    perfect: "✨ Tefillin Properly Aligned!",
-    perfectSub: "Entire Tefillin box is centered and resting strictly on hair area.",
-    foreheadWarning: "⬆️ Warning: Tefillin touches forehead!",
-    modalTitle: "Halachic Rules for Head Tefillin",
-    modalRule1Title: "Horizontal Symmetry",
-    modalRule1Text: "The Shel Rosh Tefillin must sit EXACTLY in the middle between your eyes.",
-    modalRule2Title: "Strict Hair Growth Boundary",
-    modalRule2Text: "The ENTIRE Tefillin and base MUST sit on scalp hair. If even a fraction touches forehead skin, the mitzvah is invalidated!",
-    modalRule3Title: "Tefillin Detection in Camera",
-    modalRule3Text: "The camera detects the Head Tefillin and verifies that all parts rest strictly on the hair growth area.",
-    bugModalTitle: "🐞 Report an Issue",
-    bugIntro: "Having trouble with detection or stability? You can record a quick 5-second video clip and send technical logs so we can fix it quickly.",
-    recordVideoBtn: "Record 5s Video & Share Logs",
-    recordingText: "Recording clip... ",
-    snapshotBtn: "Capture Snapshot & Logs Only",
-    shareBtn: "Share (WhatsApp / Gmail)",
-    downloadBtn: "Download File",
-    bugSuccess: "Report package ready! You can now share or download."
+// Access external translation dictionaries loaded via i18n/he.js, i18n/en.js
+function getI18n() {
+  if (typeof window !== 'undefined' && window.I18N) {
+    return window.I18N[state.currentLang] || window.I18N.he || {};
   }
-};
+  return {};
+}
 
 // DOM Elements
 const webcam = document.getElementById('webcam');
@@ -129,6 +75,7 @@ const infoBtn = document.getElementById('infoBtn');
 const infoModal = document.getElementById('infoModal');
 const closeModalBtn = document.getElementById('closeModalBtn');
 const toggleGuidesBtn = document.getElementById('toggleGuidesBtn');
+const appTitle = document.getElementById('appTitle');
 const appSubTitle = document.getElementById('appSubTitle');
 
 // Bug Report Modal Elements
@@ -147,39 +94,85 @@ const bugExportActions = document.getElementById('bugExportActions');
 const shareBugBtn = document.getElementById('shareBugBtn');
 const downloadBugBtn = document.getElementById('downloadBugBtn');
 
-function updateUIStrings() {
-  const lang = i18n[state.currentLang];
-  if (appSubTitle) appSubTitle.innerText = lang.subTitle;
-  langToggleBtn.innerText = lang.langBtn;
-  document.getElementById('modalTitle').innerText = lang.modalTitle;
-  document.getElementById('modalBody').innerHTML = `
-    <div class="halacha-rule">
-      <div class="rule-num">1</div>
-      <div><h4>${lang.modalRule1Title}</h4><p>${lang.modalRule1Text}</p></div>
-    </div>
-    <div class="halacha-rule">
-      <div class="rule-num">2</div>
-      <div><h4>${lang.modalRule2Title}</h4><p>${lang.modalRule2Text}</p></div>
-    </div>
-    <div class="halacha-rule">
-      <div class="rule-num">3</div>
-      <div><h4>${lang.modalRule3Title}</h4><p>${lang.modalRule3Text}</p></div>
-    </div>
-  `;
+let isCameraRunning = false;
+let hasFirstFaceResult = false;
 
-  // Bug Modal Strings
-  document.getElementById('bugModalTitle').innerText = lang.bugModalTitle;
-  document.getElementById('bugIntroText').innerText = lang.bugIntro;
-  recordBugBtnText.innerText = lang.recordVideoBtn;
-  snapshotBugBtnText.innerText = lang.snapshotBtn;
-  document.getElementById('lblShareBug').innerText = lang.shareBtn;
-  document.getElementById('lblDownloadBug').innerText = lang.downloadBtn;
+function updateUIStrings() {
+  const t = getI18n();
+
+  document.documentElement.lang = state.currentLang;
+  document.documentElement.dir = t.dir || (state.currentLang === 'he' ? 'rtl' : 'ltr');
+  document.title = state.currentLang === 'he' ? "מראת תפילין | Tefillin Mirror" : "Tefillin Mirror | מראת תפילין";
+
+  if (appTitle) appTitle.innerText = t.appTitle;
+  if (appSubTitle) appSubTitle.innerText = t.appSubTitle;
+  if (langToggleBtn) langToggleBtn.innerText = t.langToggleLabel;
+
+  if (modelSelect) modelSelect.title = t.modelSelectTitle || "";
+  const optUint8 = document.getElementById('optModelUint8');
+  if (optUint8) optUint8.innerText = t.modelInt8;
+  const optFp16 = document.getElementById('optModelFp16');
+  if (optFp16) optFp16.innerText = t.modelFp16;
+
+  if (bugReportBtn) bugReportBtn.title = t.bugReportBtnTitle || "";
+  if (infoBtn) infoBtn.title = t.infoBtnTitle || "";
+
+  if (toggleGuidesBtn) {
+    toggleGuidesBtn.innerText = t.toggleGuides;
+    toggleGuidesBtn.title = t.toggleGuidesTitle || "";
+  }
+
+  // Initial guidance / status if not tracking yet
+  if (!hasFirstFaceResult) {
+    statusText.innerText = isCameraRunning ? t.searchingFace : t.cameraStarting;
+    guidanceTitle.innerText = t.initialGuideTitle;
+    guidanceSub.innerText = t.initialGuideSub;
+  }
+
+  // Halachic Guide Modal
+  const modalTitle = document.getElementById('modalTitle');
+  if (modalTitle) modalTitle.innerText = t.modalTitle;
+  const modalBody = document.getElementById('modalBody');
+  if (modalBody) {
+    modalBody.innerHTML = `
+      <div class="halacha-rule">
+        <div class="rule-num">1</div>
+        <div><h4>${t.modalRule1Title}</h4><p>${t.modalRule1Text}</p></div>
+      </div>
+      <div class="halacha-rule">
+        <div class="rule-num">2</div>
+        <div><h4>${t.modalRule2Title}</h4><p>${t.modalRule2Text}</p></div>
+      </div>
+      <div class="halacha-rule">
+        <div class="rule-num">3</div>
+        <div><h4>${t.modalRule3Title}</h4><p>${t.modalRule3Text}</p></div>
+      </div>
+    `;
+  }
+
+  // Bug Report Modal Strings
+  const bugModalTitle = document.getElementById('bugModalTitle');
+  if (bugModalTitle) bugModalTitle.innerText = t.bugModalTitle;
+  const bugIntroText = document.getElementById('bugIntroText');
+  if (bugIntroText) bugIntroText.innerText = t.bugIntro;
+  if (recordBugBtnText) recordBugBtnText.innerText = t.recordVideoBtn;
+  if (snapshotBugBtnText) snapshotBugBtnText.innerText = t.snapshotBtn;
+  const lblBugNotes = document.getElementById('lblBugNotes');
+  if (lblBugNotes) lblBugNotes.innerText = t.bugNotesLabel;
+  if (bugNotesInput) bugNotesInput.placeholder = t.bugNotesPlaceholder;
+  const lblShareBug = document.getElementById('lblShareBug');
+  if (lblShareBug) lblShareBug.innerText = t.shareBtn;
+  const lblDownloadBug = document.getElementById('lblDownloadBug');
+  if (lblDownloadBug) lblDownloadBug.innerText = t.downloadBtn;
+
+  // Footer
+  const appFooterText = document.getElementById('appFooterText');
+  if (appFooterText) appFooterText.innerText = t.footerText;
 }
 
 langToggleBtn.addEventListener('click', () => {
   state.currentLang = state.currentLang === 'he' ? 'en' : 'he';
-  document.documentElement.lang = state.currentLang;
-  document.documentElement.dir = state.currentLang === 'he' ? 'rtl' : 'ltr';
+  localStorage.setItem('tefillin_lang', state.currentLang);
   updateUIStrings();
 });
 
@@ -190,11 +183,12 @@ if (modelSelect) {
     const chosen = e.target.value;
     state.selectedModel = chosen;
     localStorage.setItem('tefillin_model', chosen);
-    statusText.innerText = state.currentLang === 'he' ? `טוען מודל ${chosen}...` : `Loading ${chosen} model...`;
+    const t = getI18n();
+    statusText.innerText = typeof t.modelSwitching === 'function' ? t.modelSwitching(chosen) : `Loading ${chosen}...`;
     statusDot.className = "status-indicator-dot searching";
     try {
       await YoloEngine.loadModel(chosen);
-      statusText.innerText = state.currentLang === 'he' ? `מודל ${chosen} מוכן` : `Model ${chosen} active`;
+      statusText.innerText = typeof t.modelActive === 'function' ? t.modelActive(chosen) : `Model ${chosen} ready`;
       console.log(`[App] Model switched to: ${chosen}`);
     } catch (err) {
       console.error("[App] Failed to load model:", err);
@@ -264,9 +258,9 @@ recordBugVideoBtn.addEventListener('click', async () => {
   recordingProgress.style.display = 'block';
   recordingProgressBar.style.width = '0%';
 
-  const lang = i18n[state.currentLang];
+  const t = getI18n();
   let secondsLeft = 5;
-  recordBugBtnText.innerText = `${lang.recordingText} (${secondsLeft}s)`;
+  recordBugBtnText.innerText = `${t.recordingText} (${secondsLeft}s)`;
 
   try {
     const stream = canvas.captureStream ? canvas.captureStream(25) : null;
@@ -284,7 +278,7 @@ recordBugVideoBtn.addEventListener('click', async () => {
       secondsLeft--;
       recordingProgressBar.style.width = `${((5 - secondsLeft) / 5) * 100}%`;
       if (secondsLeft > 0) {
-        recordBugBtnText.innerText = `${lang.recordingText} (${secondsLeft}s)`;
+        recordBugBtnText.innerText = `${t.recordingText} (${secondsLeft}s)`;
       } else {
         clearInterval(interval);
         if (recorder && recorder.state !== 'inactive') {
@@ -292,7 +286,7 @@ recordBugVideoBtn.addEventListener('click', async () => {
             recordedBugMediaBlob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
             recordedBugMediaType = 'video';
             generatedLogContent = buildDiagnosticLog(bugNotesInput.value);
-            finishBugRecording(lang);
+            finishBugRecording(t);
           };
           recorder.stop();
         } else {
@@ -301,7 +295,7 @@ recordBugVideoBtn.addEventListener('click', async () => {
             recordedBugMediaBlob = blob;
             recordedBugMediaType = 'image';
             generatedLogContent = buildDiagnosticLog(bugNotesInput.value);
-            finishBugRecording(lang);
+            finishBugRecording(t);
           }, 'image/jpeg', 0.9);
         }
       }
@@ -310,24 +304,25 @@ recordBugVideoBtn.addEventListener('click', async () => {
     console.error("Bug recording error:", err);
     recordBugVideoBtn.disabled = false;
     captureBugSnapshotBtn.disabled = false;
-    recordBugBtnText.innerText = lang.recordVideoBtn;
+    recordBugBtnText.innerText = t.recordVideoBtn;
   }
 });
 
 captureBugSnapshotBtn.addEventListener('click', () => {
+  const t = getI18n();
   canvas.toBlob((blob) => {
     recordedBugMediaBlob = blob;
     recordedBugMediaType = 'image';
     generatedLogContent = buildDiagnosticLog(bugNotesInput.value);
-    finishBugRecording(i18n[state.currentLang]);
+    finishBugRecording(t);
   }, 'image/jpeg', 0.92);
 });
 
-function finishBugRecording(lang) {
+function finishBugRecording(t) {
   recordBugVideoBtn.disabled = false;
   captureBugSnapshotBtn.disabled = false;
-  recordBugBtnText.innerText = lang.recordVideoBtn;
-  bugStatusMsg.innerText = lang.bugSuccess;
+  recordBugBtnText.innerText = t.recordVideoBtn;
+  bugStatusMsg.innerText = t.bugSuccess;
   bugStatusMsg.style.display = 'block';
   bugExportActions.style.display = 'flex';
 }
@@ -406,6 +401,21 @@ faceMesh.setOptions({
 faceMesh.onResults(onFaceResults);
 
 async function initCamera() {
+  const t = getI18n();
+  statusText.innerText = t.cameraStarting;
+  statusDot.className = "status-indicator-dot searching";
+
+  const onCameraFeedActive = () => {
+    isCameraRunning = true;
+    if (!hasFirstFaceResult) {
+      statusText.innerText = getI18n().searchingFace;
+      statusDot.className = "status-indicator-dot searching";
+    }
+  };
+
+  webcam.addEventListener('loadeddata', onCameraFeedActive, { once: true });
+  webcam.addEventListener('playing', onCameraFeedActive, { once: true });
+
   try {
     const camera = new Camera(webcam, {
       onFrame: async () => {
@@ -415,6 +425,7 @@ async function initCamera() {
       height: 480
     });
     await camera.start();
+    onCameraFeedActive();
   } catch (err) {
     console.error("Camera startup error:", err);
   }
@@ -425,6 +436,7 @@ let yoloCanvas = null;
 let yoloCtx = null;
 
 async function onFaceResults(results) {
+  hasFirstFaceResult = true;
   canvas.width = webcam.videoWidth || 640;
   canvas.height = webcam.videoHeight || 480;
 
@@ -432,16 +444,16 @@ async function onFaceResults(results) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
-  const lang = i18n[state.currentLang];
+  const t = getI18n();
 
   if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
     videoStabilizer.reset();
     statusDot.className = "status-indicator-dot searching";
-    statusText.innerText = lang.noFace;
+    statusText.innerText = t.noFace;
     guidanceCard.className = "guidance-card";
     directionArrow.innerText = "🔍";
-    guidanceTitle.innerText = lang.noFace;
-    guidanceSub.innerText = lang.noTefillinSub;
+    guidanceTitle.innerText = t.noFace;
+    guidanceSub.innerText = t.noTefillinSub;
     ctx.restore();
     return;
   }
@@ -491,63 +503,64 @@ async function onFaceResults(results) {
   if (!winner) {
     state.tefillinFound = false;
     statusDot.className = "status-indicator-dot searching";
-    statusText.innerText = lang.noTefillin;
+    statusText.innerText = t.noTefillin;
     guidanceCard.className = "guidance-card warning";
     directionArrow.innerText = "🔳";
-    guidanceTitle.innerText = lang.noTefillin;
-    guidanceSub.innerText = lang.noTefillinSub;
+    guidanceTitle.innerText = t.noTefillin;
+    guidanceSub.innerText = t.noTefillinSub;
   } else {
     state.tefillinFound = true;
     const { isKosher, isCentered, distAboveHairline, horizOffset } = alignment;
 
     // 5. Directional Halachic State Guidance with Explicit Movement Arrows
-    if (alignment.status === 'CAMERA_TOO_LOW' || alignment.status === 'CAMERA_TOO_HIGH') {
+    if (alignment.status === 'CAMERA_TOO_LOW') {
       statusDot.className = "status-indicator-dot caution";
-      statusText.innerText = alignment.status === 'CAMERA_TOO_LOW' 
-        ? (state.currentLang === 'he' ? "מצלמה נמוכה מדי" : "Camera Too Low") 
-        : (state.currentLang === 'he' ? "מצלמה גבוהה מדי" : "Camera Too High");
+      statusText.innerText = t.cameraTooLow;
       guidanceCard.className = "guidance-card caution";
       directionArrow.innerText = "📐";
-      guidanceTitle.innerText = state.currentLang === 'he' ? "📐 כווננו את גובה המצלמה" : "📐 Adjust Camera Height";
-      guidanceSub.innerText = alignment.direction;
+      guidanceTitle.innerText = t.cameraAngleTitle;
+      guidanceSub.innerText = t.cameraTooLowSub;
+    } else if (alignment.status === 'CAMERA_TOO_HIGH') {
+      statusDot.className = "status-indicator-dot caution";
+      statusText.innerText = t.cameraTooHigh;
+      guidanceCard.className = "guidance-card caution";
+      directionArrow.innerText = "📐";
+      guidanceTitle.innerText = t.cameraAngleTitle;
+      guidanceSub.innerText = t.cameraTooHighSub;
     } else if (!isKosher) {
       // LOWEST EDGE TOUCHES FOREHEAD -> RED ALERT
       statusDot.className = "status-indicator-dot misaligned";
-      statusText.innerText = state.currentLang === 'he' ? "⬆️ נוגע במצח" : "⬆️ Touches Forehead";
+      statusText.innerText = t.touchesForeheadAlert;
       guidanceCard.className = "guidance-card warning";
       directionArrow.innerText = "⬆️";
-      guidanceTitle.innerText = state.currentLang === 'he' ? "⬆️ הרימו את התפילין למעלה!" : "⬆️ Move Tefillin UP!";
-      guidanceSub.innerHTML = state.currentLang === 'he' 
-        ? `התפילין נוגעות במצח! יש להרים אל מקום השיער. <br><a href="https://www.youtube.com/watch?v=4BEhw4g_OJI" target="_blank" style="color: #ffbba6; text-decoration: underline; margin-top: 6px; display: inline-block;">🎥 מדריך: איך להקטין את הקשר</a>`
-        : `Tefillin touches forehead! Move up onto hair area.`;
+      guidanceTitle.innerText = t.moveUpTitle;
+      guidanceSub.innerHTML = `${t.moveUpSub} <br><a href="https://www.youtube.com/watch?v=4BEhw4g_OJI" target="_blank" style="color: #ffbba6; text-decoration: underline; margin-top: 6px; display: inline-block;">${t.adjustKnotGuide}</a>`;
     } else if (alignment.status === 'OFF_CENTER') {
       // OFF CENTER -> YELLOW ALERT WITH CLEAR DIRECTION ARROWS
       statusDot.className = "status-indicator-dot caution";
-      statusText.innerText = state.currentLang === 'he' ? "לא ממורכז" : "Off-center";
+      statusText.innerText = t.offCenterAlert;
       guidanceCard.className = "guidance-card caution";
       
       const isMoveLeft = horizOffset > 0;
       const arrow = isMoveLeft ? "⬅️" : "➡️";
       directionArrow.innerText = arrow;
-      guidanceTitle.innerText = `${arrow} ${isMoveLeft ? (state.currentLang === 'he' ? "הזיזו את התפילין שמאלה" : "Move Tefillin LEFT") : (state.currentLang === 'he' ? "הזיזו את התפילין ימינה" : "Move Tefillin RIGHT")}`;
-      guidanceSub.innerText = isMoveLeft 
-        ? (state.currentLang === 'he' ? "הזיזו את התפילין שמאלה (לצד שמאל שלכם)" : "Move Tefillin to your left") 
-        : (state.currentLang === 'he' ? "הזיזו את התפילין ימינה (לצד ימין שלכם)" : "Move Tefillin to your right");
+      guidanceTitle.innerText = isMoveLeft ? t.moveLeftTitle : t.moveRightTitle;
+      guidanceSub.innerText = isMoveLeft ? t.moveLeftSub : t.moveRightSub;
     } else if (alignment.warning) {
       statusDot.className = "status-indicator-dot caution";
-      statusText.innerText = state.currentLang === 'he' ? "גבולי" : "Borderline";
+      statusText.innerText = t.borderlineAlert;
       guidanceCard.className = "guidance-card caution";
       directionArrow.innerText = "⚠️";
-      guidanceTitle.innerText = state.currentLang === 'he' ? "⚠️ קרוב מאוד למצח" : "⚠️ Very Close to Forehead";
-      guidanceSub.innerText = state.currentLang === 'he' ? "התפילין במקום שיער אך קרובות מאוד לגבול." : "Tefillin rests on hair but very close to border.";
+      guidanceTitle.innerText = t.borderlineTitle;
+      guidanceSub.innerText = t.borderlineSub;
     } else {
       // PERFECT ALIGNMENT -> GREEN
       statusDot.className = "status-indicator-dot aligned";
-      statusText.innerText = lang.perfect;
+      statusText.innerText = t.perfectAlert;
       guidanceCard.className = "guidance-card aligned";
       directionArrow.innerText = "✨";
-      guidanceTitle.innerText = lang.perfect;
-      guidanceSub.innerText = lang.perfectSub;
+      guidanceTitle.innerText = t.perfectTitle;
+      guidanceSub.innerText = t.perfectSub;
     }
   }
 

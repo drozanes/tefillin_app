@@ -15,41 +15,37 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
   
+  <!-- Localization Dictionaries -->
+  <script src="i18n/he.js"></script>
+  <script src="i18n/en.js"></script>
+  
   <!-- AI Inference (ONNX Web Runtime) & App Config -->
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
   <script src="config.js"></script>
   <script src="yolo_engine.js"></script>
 
   <link rel="stylesheet" href="style.css">
-  <!-- 
-    ANALYTICS SCRIPT (Task 5)
-    To track visitors and distinct users, you can use a free service like GoatCounter or Google Analytics.
-    For GoatCounter (Privacy friendly, no cookie banner needed):
-    1. Go to https://www.goatcounter.com/ and register for free (e.g. your-code.goatcounter.com)
-    2. Uncomment the script below and replace YOUR_CODE with your chosen name.
-  -->
-  <!-- <script data-goatcounter="https://YOUR_CODE.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script> -->
 </head>
 <body>
   <div class="app-container">
-    <!-- Header Navbar -->
+    <!-- Responsive Header Navbar -->
     <header class="app-header">
-      <div class="logo-area">
-        <div class="logo-icon">🪞</div>
-        <div class="logo-text">
-          <h1>מראת תפילין</h1>
-          <span class="subtext" id="appSubTitle">זיהוי תפילין + בדיקת אמצע ומקום שיער</span>
+      <div class="header-top">
+        <div class="logo-area">
+          <div class="logo-icon">🪞</div>
+          <h1 id="appTitle">מראת תפילין</h1>
+        </div>
+        <div class="header-actions">
+          <select id="modelSelect" class="btn btn-glass model-select" title="בחר מודל זיהוי / Select AI Model">
+            <option value="uint8" id="optModelUint8">⚡ INT8</option>
+            <option value="fp16" id="optModelFp16">🎯 FP16</option>
+          </select>
+          <button id="langToggleBtn" class="btn btn-glass lang-btn" title="שנה שפה / Switch Language">English</button>
+          <button id="bugReportBtn" class="btn btn-glass icon-btn" title="דיווח על בעיה / Report Bug">🐞</button>
+          <button id="infoBtn" class="btn btn-glass icon-btn" title="הלכות תפילין / Halachic Guide">ℹ️</button>
         </div>
       </div>
-      <div class="header-actions">
-        <select id="modelSelect" class="btn btn-glass model-select" title="בחר מודל זיהוי / Select AI Model">
-          <option value="uint8">⚡ INT8 (מהיר)</option>
-          <option value="fp16">🎯 FP16 (מדויק)</option>
-        </select>
-        <button id="langToggleBtn" class="btn btn-glass">English</button>
-        <button id="bugReportBtn" class="btn btn-glass icon-btn" title="דיווח על בעיה / Report Bug">🐞</button>
-        <button id="infoBtn" class="btn btn-glass icon-btn" title="הלכות תפילין">ℹ️</button>
-      </div>
+      <div class="header-sub" id="appSubTitle">זיהוי תפילין + בדיקת אמצע ומקום שיער</div>
     </header>
 
     <!-- Camera Viewport & Overlay -->
@@ -137,7 +133,7 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      <p>מראת תפילין • זיהוי תפילין מדויק בזמן אמת</p>
+      <p id="appFooterText">מראת תפילין • זיהוי תפילין מדויק בזמן אמת</p>
     </footer>
     <!-- Shared Algorithm Engine -->
     <script src="tefillin_engine.js"></script>
