@@ -64,15 +64,21 @@ window.I18N.he = {
 
   // Bug Report Modal
   bugModalTitle: "🐞 דיווח על בעיה",
-  bugIntro: "נתקלתם בבעיה בזיהוי התפילין או ביציבות? באפשרותכם להקליט סרטון קצר (5 שניות) ולשלוח לוגים טכניים כדי שנוכל לתקן זאת בהקדם.",
-  recordVideoBtn: "הקלט 5 שניות וידאו ושתף לוגים",
+  bugIntro: "נתקלתם בבעיה בזיהוי התפילין או ביציבות? באפשרותכם להקליט סרטון קצר (5 שניות) או לצלם תמונה, ולשתף לוגים טכניים ישירות ל-WhatsApp או במייל.",
+  recordVideoBtn: "הקלט 5 שניות וידאו ושתף",
   recordingText: "מקליט וידאו... ",
-  snapshotBtn: "צלם תמונת מסך ולוגים בלבד",
+  snapshotBtn: "צלם תמונת מסך ולוגים",
   bugNotesLabel: "תיאור קצר (לא חובה):",
   bugNotesPlaceholder: "למשל: התפילין במקום הנכון אך זוהו כפסולות",
-  shareBtn: "שתף (WhatsApp / Gmail)",
+  bugPreviewLabel: "תצוגה מקדימה של מה שהוקלט:",
+  shareBtn: "שתף (WhatsApp / אפליקציות)",
+  whatsappBtn: "WhatsApp",
+  copyLogsBtn: "העתק לוגים",
+  emailBtn: "דוא\"ל",
   downloadBtn: "הורד קובץ",
-  bugSuccess: "הדוח מוכן! ניתן לשתף או להוריד כעת.",
+  bugSuccess: "הדוח מוכן! בחרו כיצד לשתף:",
+  logsCopied: "✅ הלוגים הועתקו ללוח בהצלחה!",
+  downloadSuccess: "✅ הקבצים נשמרו בהצלחה במכשיר!",
 
   // Footer
   footerText: "מראת תפילין • זיהוי תפילין מדויק בזמן אמת"

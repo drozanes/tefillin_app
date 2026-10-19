@@ -102,9 +102,13 @@ const YoloEngine = (function() {
              window.location.hostname === 'localhost'));
         
         if (isLocalApp) {
-            ort.env.wasm.wasmPaths = 'vendor/onnx/';
+            try {
+                ort.env.wasm.wasmPaths = new URL('vendor/onnx/', window.location.href).href;
+            } catch (_) {
+                ort.env.wasm.wasmPaths = 'vendor/onnx/';
+            }
         } else {
-            ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+            ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
         }
         ort.env.wasm.numThreads = 1;
         ort.env.wasm.simd = true;
@@ -136,11 +140,26 @@ const YoloEngine = (function() {
         activeModelPath = resolved.path;
         activeModelKey = resolved.key;
 
-        // Use WebGPU if available, or fast multiplatform WASM SIMD.
-        // Avoid WebGL here because WebGL does not support integer-quantized uint8 models and causes slow fallback.
-        session = await ort.InferenceSession.create(resolved.path, { 
-            executionProviders: ['webgpu', 'wasm'] 
-        });
+        // Try WebGPU first, then gracefully fall back to WASM SIMD
+        let sessionInstance = null;
+        try {
+            sessionInstance = await ort.InferenceSession.create(resolved.path, { 
+                executionProviders: ['webgpu'] 
+            });
+            console.log(`[YOLO Engine] Model loaded via WebGPU: ${resolved.key}`);
+        } catch (gpuErr) {
+            console.warn(`[YOLO Engine] WebGPU unavailable (${gpuErr.message}), falling back to WASM SIMD...`);
+            try {
+                sessionInstance = await ort.InferenceSession.create(resolved.path, { 
+                    executionProviders: ['wasm'] 
+                });
+                console.log(`[YOLO Engine] Model loaded via WASM SIMD: ${resolved.key}`);
+            } catch (wasmErr) {
+                console.warn(`[YOLO Engine] WASM provider failed (${wasmErr.message}), trying default fallback...`);
+                sessionInstance = await ort.InferenceSession.create(resolved.path);
+            }
+        }
+        session = sessionInstance;
         
         // Immediate Warmup: compile WASM JIT and allocate internal memory ahead of time
         try {

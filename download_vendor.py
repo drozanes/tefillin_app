@@ -11,17 +11,25 @@ os.makedirs(os.path.join(VENDOR_DIR, 'mediapipe'), exist_ok=True)
 os.makedirs(os.path.join(VENDOR_DIR, 'onnx'), exist_ok=True)
 
 FILES = [
+    # MediaPipe Face Mesh & Camera Utils
     (os.path.join(VENDOR_DIR, 'mediapipe', 'camera_utils.js'), 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js'),
-    (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh.js'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js'),
-    (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh_solution_simd_wasm_bin.js'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh_solution_simd_wasm_bin.js'),
-    (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh_solution_simd_wasm_bin.wasm'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh_solution_simd_wasm_bin.wasm'),
-    (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh.binarypb'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.binarypb'),
-    (os.path.join(VENDOR_DIR, 'onnx', 'ort.min.js'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js'),
-    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd.wasm'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort-wasm-simd.wasm'),
-    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm.wasm'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort-wasm.wasm'),
-    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd-threaded.wasm'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm'),
-    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd-threaded.jsep.wasm'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm'),
-    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd-threaded.jsep.mjs'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs'),
+    (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh.js'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js'),
+    (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh.binarypb'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.binarypb'),
+    (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh_solution_packed_assets_loader.js'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh_solution_packed_assets_loader.js'),
+    (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh_solution_packed_assets.data'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh_solution_packed_assets.data'),
+    (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh_solution_simd_wasm_bin.js'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh_solution_simd_wasm_bin.js'),
+    (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh_solution_simd_wasm_bin.wasm'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh_solution_simd_wasm_bin.wasm'),
+    (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh_solution_wasm_bin.js'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh_solution_wasm_bin.js'),
+    (os.path.join(VENDOR_DIR, 'mediapipe', 'face_mesh_solution_wasm_bin.wasm'), 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh_solution_wasm_bin.wasm'),
+
+    # ONNX Runtime Web
+    (os.path.join(VENDOR_DIR, 'onnx', 'ort.min.js'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.min.js'),
+    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd.wasm'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort-wasm-simd.wasm'),
+    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm.wasm'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort-wasm.wasm'),
+    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd-threaded.wasm'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort-wasm-simd-threaded.wasm'),
+    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd-threaded.mjs'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort-wasm-simd-threaded.mjs'),
+    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd-threaded.jsep.wasm'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort-wasm-simd-threaded.jsep.wasm'),
+    (os.path.join(VENDOR_DIR, 'onnx', 'ort-wasm-simd-threaded.jsep.mjs'), 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort-wasm-simd-threaded.jsep.mjs'),
 ]
 
 print("=== Downloading Vendor Dependencies for Offline Capacitor App ===")
@@ -32,7 +40,7 @@ for dest, url in FILES:
         continue
     print(f"  ⬇ Downloading {fname} from {url}...")
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req, timeout=45) as r, open(dest, 'wb') as f:
+    with urllib.request.urlopen(req, timeout=60) as r, open(dest, 'wb') as f:
         f.write(r.read())
     print(f"  ✔ Finished {fname} ({os.path.getsize(dest)/(1024*1024):.2f} MB)")
 

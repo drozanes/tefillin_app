@@ -64,15 +64,21 @@ window.I18N.en = {
 
   // Bug Report Modal
   bugModalTitle: "🐞 Report an Issue",
-  bugIntro: "Having trouble with detection or stability? You can record a quick 5-second video clip and send technical logs so we can fix it promptly.",
-  recordVideoBtn: "Record 5s Video & Share Logs",
+  bugIntro: "Having trouble with detection or stability? Record a quick 5-second video clip or capture a snapshot, and share diagnostic logs directly to WhatsApp or Email.",
+  recordVideoBtn: "Record 5s Video & Share",
   recordingText: "Recording clip... ",
-  snapshotBtn: "Capture Snapshot & Logs Only",
+  snapshotBtn: "Capture Snapshot & Logs",
   bugNotesLabel: "Brief description (optional):",
   bugNotesPlaceholder: "e.g., Tefillin is placed correctly but marked invalid",
-  shareBtn: "Share (WhatsApp / Gmail)",
+  bugPreviewLabel: "Preview of captured media:",
+  shareBtn: "Share (WhatsApp / Apps)",
+  whatsappBtn: "WhatsApp",
+  copyLogsBtn: "Copy Logs",
+  emailBtn: "Email",
   downloadBtn: "Download File",
-  bugSuccess: "Report package ready! You can now share or download.",
+  bugSuccess: "Report package ready! Choose how to share:",
+  logsCopied: "✅ Logs copied to clipboard successfully!",
+  downloadSuccess: "✅ Files saved to device successfully!",
 
   // Footer
   footerText: "Tefillin Mirror • Real-Time Halachic Tefillin Alignment"

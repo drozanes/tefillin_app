@@ -160,8 +160,16 @@ function updateUIStrings() {
   const lblBugNotes = document.getElementById('lblBugNotes');
   if (lblBugNotes) lblBugNotes.innerText = t.bugNotesLabel;
   if (bugNotesInput) bugNotesInput.placeholder = t.bugNotesPlaceholder;
+  const lblBugPreview = document.getElementById('lblBugPreview');
+  if (lblBugPreview) lblBugPreview.innerText = t.bugPreviewLabel;
   const lblShareBug = document.getElementById('lblShareBug');
   if (lblShareBug) lblShareBug.innerText = t.shareBtn;
+  const lblWhatsappBug = document.getElementById('lblWhatsappBug');
+  if (lblWhatsappBug) lblWhatsappBug.innerText = t.whatsappBtn;
+  const lblCopyLogsBug = document.getElementById('lblCopyLogsBug');
+  if (lblCopyLogsBug) lblCopyLogsBug.innerText = t.copyLogsBtn;
+  const lblEmailBug = document.getElementById('lblEmailBug');
+  if (lblEmailBug) lblEmailBug.innerText = t.emailBtn;
   const lblDownloadBug = document.getElementById('lblDownloadBug');
   if (lblDownloadBug) lblDownloadBug.innerText = t.downloadBtn;
 
@@ -200,9 +208,17 @@ infoBtn.addEventListener('click', () => infoModal.classList.add('open'));
 closeModalBtn.addEventListener('click', () => infoModal.classList.remove('open'));
 
 // Bug Report Modal Controls
+const bugMediaPreviewContainer = document.getElementById('bugMediaPreviewContainer');
+const bugPreviewImg = document.getElementById('bugPreviewImg');
+const bugPreviewVideo = document.getElementById('bugPreviewVideo');
+const whatsappBugBtn = document.getElementById('whatsappBugBtn');
+const copyLogsBugBtn = document.getElementById('copyLogsBugBtn');
+const emailBugBtn = document.getElementById('emailBugBtn');
+
 bugReportBtn.addEventListener('click', () => {
   bugStatusMsg.style.display = 'none';
   bugExportActions.style.display = 'none';
+  if (bugMediaPreviewContainer) bugMediaPreviewContainer.style.display = 'none';
   recordingProgress.style.display = 'none';
   recordingProgressBar.style.width = '0%';
   bugModal.classList.add('open');
@@ -239,6 +255,7 @@ function buildDiagnosticLog(notes = '') {
     `Mirrored: ${state.isMirrored}`,
     `Guides Enabled: ${state.showGuides}`,
     `Canvas Viewport: ${canvas.width}x${canvas.height}`,
+    `Webcam Resolution: ${webcam ? webcam.videoWidth : 0}x${webcam ? webcam.videoHeight : 0}`,
     `Device Pixel Ratio: ${window.devicePixelRatio}`,
     `User Agent: ${navigator.userAgent}`,
     '',
@@ -251,8 +268,38 @@ function buildDiagnosticLog(notes = '') {
   ].join('\n');
 }
 
+function showBugMediaPreview(blob, type) {
+  if (!bugMediaPreviewContainer || !bugPreviewImg || !bugPreviewVideo) return;
+  bugMediaPreviewContainer.style.display = 'block';
+  const url = URL.createObjectURL(blob);
+
+  if (type === 'video') {
+    bugPreviewImg.style.display = 'none';
+    bugPreviewVideo.style.display = 'block';
+    bugPreviewVideo.src = url;
+    bugPreviewVideo.load();
+  } else {
+    bugPreviewVideo.style.display = 'none';
+    bugPreviewImg.style.display = 'block';
+    bugPreviewImg.src = url;
+  }
+}
+
+function ensureCanvasHasFrame() {
+  if (webcam && webcam.videoWidth > 0) {
+    if (canvas.width <= 300 || canvas.height <= 150) {
+      canvas.width = webcam.videoWidth;
+      canvas.height = webcam.videoHeight;
+    }
+    if (!hasFirstFaceResult) {
+      ctx.drawImage(webcam, 0, 0, canvas.width, canvas.height);
+    }
+  }
+}
+
 recordBugVideoBtn.addEventListener('click', async () => {
   if (!canvas) return;
+  ensureCanvasHasFrame();
   recordBugVideoBtn.disabled = true;
   captureBugSnapshotBtn.disabled = true;
   recordingProgress.style.display = 'block';
@@ -261,6 +308,14 @@ recordBugVideoBtn.addEventListener('click', async () => {
   const t = getI18n();
   let secondsLeft = 5;
   recordBugBtnText.innerText = `${t.recordingText} (${secondsLeft}s)`;
+
+  // Continuously paint webcam frames during recording if FaceMesh results are pending
+  let liveRenderTimer = null;
+  if (!hasFirstFaceResult) {
+    liveRenderTimer = setInterval(() => {
+      ensureCanvasHasFrame();
+    }, 40);
+  }
 
   try {
     const stream = canvas.captureStream ? canvas.captureStream(25) : null;
@@ -281,11 +336,14 @@ recordBugVideoBtn.addEventListener('click', async () => {
         recordBugBtnText.innerText = `${t.recordingText} (${secondsLeft}s)`;
       } else {
         clearInterval(interval);
+        if (liveRenderTimer) clearInterval(liveRenderTimer);
+
         if (recorder && recorder.state !== 'inactive') {
           recorder.onstop = () => {
             recordedBugMediaBlob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
             recordedBugMediaType = 'video';
             generatedLogContent = buildDiagnosticLog(bugNotesInput.value);
+            showBugMediaPreview(recordedBugMediaBlob, 'video');
             finishBugRecording(t);
           };
           recorder.stop();
@@ -295,6 +353,7 @@ recordBugVideoBtn.addEventListener('click', async () => {
             recordedBugMediaBlob = blob;
             recordedBugMediaType = 'image';
             generatedLogContent = buildDiagnosticLog(bugNotesInput.value);
+            showBugMediaPreview(recordedBugMediaBlob, 'image');
             finishBugRecording(t);
           }, 'image/jpeg', 0.9);
         }
@@ -302,6 +361,7 @@ recordBugVideoBtn.addEventListener('click', async () => {
     }, 1000);
   } catch (err) {
     console.error("Bug recording error:", err);
+    if (liveRenderTimer) clearInterval(liveRenderTimer);
     recordBugVideoBtn.disabled = false;
     captureBugSnapshotBtn.disabled = false;
     recordBugBtnText.innerText = t.recordVideoBtn;
@@ -310,10 +370,12 @@ recordBugVideoBtn.addEventListener('click', async () => {
 
 captureBugSnapshotBtn.addEventListener('click', () => {
   const t = getI18n();
+  ensureCanvasHasFrame();
   canvas.toBlob((blob) => {
     recordedBugMediaBlob = blob;
     recordedBugMediaType = 'image';
     generatedLogContent = buildDiagnosticLog(bugNotesInput.value);
+    showBugMediaPreview(recordedBugMediaBlob, 'image');
     finishBugRecording(t);
   }, 'image/jpeg', 0.92);
 });
@@ -327,41 +389,170 @@ function finishBugRecording(t) {
   bugExportActions.style.display = 'flex';
 }
 
-// Share Bug Report
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result;
+      const base64 = dataUrl.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// 1. Share via Native Share Sheet (WhatsApp, Gmail, etc.)
 shareBugBtn.addEventListener('click', async () => {
   if (!recordedBugMediaBlob) return;
   const ext = recordedBugMediaType === 'video' ? 'webm' : 'jpg';
   const mime = recordedBugMediaType === 'video' ? 'video/webm' : 'image/jpeg';
-  const mediaFile = new File([recordedBugMediaBlob], `tefillin_mirror_bug.${ext}`, { type: mime });
-  const logFile = new File([generatedLogContent], 'tefillin_mirror_logs.txt', { type: 'text/plain' });
+  const mediaFilename = `tefillin_mirror_bug.${ext}`;
+  const logFilename = 'tefillin_mirror_logs.txt';
 
+  // Capacitor Native Share
+  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share && window.Capacitor.Plugins.Filesystem) {
+    try {
+      const { Share, Filesystem } = window.Capacitor.Plugins;
+      const mediaB64 = await blobToBase64(recordedBugMediaBlob);
+      const mediaRes = await Filesystem.writeFile({
+        path: mediaFilename,
+        data: mediaB64,
+        directory: 'CACHE'
+      });
+
+      const logB64 = btoa(unescape(encodeURIComponent(generatedLogContent)));
+      const logRes = await Filesystem.writeFile({
+        path: logFilename,
+        data: logB64,
+        directory: 'CACHE'
+      });
+
+      await Share.share({
+        title: 'Tefillin Mirror Bug Report',
+        text: 'Tefillin Mirror Diagnostic Logs & Media',
+        files: [mediaRes.uri, logRes.uri],
+        dialogTitle: 'Share Bug Report via WhatsApp, Gmail...'
+      });
+      return;
+    } catch (capErr) {
+      console.warn("Capacitor Share error, trying Web Share fallback:", capErr);
+    }
+  }
+
+  // Web Share API fallback
+  const mediaFile = new File([recordedBugMediaBlob], mediaFilename, { type: mime });
+  const logFile = new File([generatedLogContent], logFilename, { type: 'text/plain' });
   if (navigator.canShare && navigator.canShare({ files: [mediaFile, logFile] })) {
     try {
       await navigator.share({
         title: 'Tefillin Mirror Bug Report',
-        text: 'Tefillin Mirror Diagnostic Logs & Video',
+        text: 'Tefillin Mirror Diagnostic Logs & Media',
         files: [mediaFile, logFile]
       });
       return;
     } catch (_) {}
   }
 
-  // Fallback: trigger download and open mailto
-  triggerDownload(mediaFile, `tefillin_mirror_bug.${ext}`);
-  triggerDownload(logFile, 'tefillin_mirror_logs.txt');
-  const mailSubject = encodeURIComponent("Tefillin Mirror Bug Report");
-  const mailBody = encodeURIComponent("Please find attached the downloaded video and logs.\n\n" + generatedLogContent.substring(0, 1500));
-  window.open(`mailto:drozanes@gmail.com?subject=${mailSubject}&body=${mailBody}`, '_blank');
+  // Final fallback: open WhatsApp directly
+  openWhatsAppReport();
 });
 
-// Download Bug Report Files
-downloadBugBtn.addEventListener('click', () => {
+// 2. Direct WhatsApp Share
+function openWhatsAppReport() {
+  const notes = bugNotesInput.value || "None provided";
+  const firstError = startupLogs.find(l => l.includes('[ERROR]')) || "No explicit crash in logs";
+  const summaryMsg = `*Tefillin Mirror Bug Report*\n` +
+    `• Model: ${state.selectedModel}\n` +
+    `• Lang: ${state.currentLang}\n` +
+    `• Notes: ${notes}\n` +
+    `• Diagnostic: ${firstError.substring(0, 250)}\n` +
+    `• Time: ${new Date().toISOString()}`;
+  const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(summaryMsg)}`;
+  window.open(waUrl, '_blank');
+}
+if (whatsappBugBtn) whatsappBugBtn.addEventListener('click', openWhatsAppReport);
+
+// 3. Copy Logs to Clipboard
+if (copyLogsBugBtn) {
+  copyLogsBugBtn.addEventListener('click', async () => {
+    const t = getI18n();
+    try {
+      await navigator.clipboard.writeText(generatedLogContent);
+      bugStatusMsg.innerText = t.logsCopied;
+      bugStatusMsg.style.display = 'block';
+    } catch (_) {
+      const ta = document.createElement('textarea');
+      ta.value = generatedLogContent;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      bugStatusMsg.innerText = t.logsCopied;
+      bugStatusMsg.style.display = 'block';
+    }
+  });
+}
+
+// 4. Email Report
+if (emailBugBtn) {
+  emailBugBtn.addEventListener('click', () => {
+    const notes = bugNotesInput.value || "None provided";
+    const mailSubject = encodeURIComponent("Tefillin Mirror Bug Report");
+    const firstError = startupLogs.find(l => l.includes('[ERROR]')) || "";
+    const mailBody = encodeURIComponent(
+      `Tefillin Mirror Bug Report\n\n` +
+      `Notes: ${notes}\n` +
+      `Active Model: ${state.selectedModel}\n` +
+      `Language: ${state.currentLang}\n` +
+      `Viewport: ${canvas.width}x${canvas.height}\n` +
+      `Timestamp: ${new Date().toISOString()}\n\n` +
+      (firstError ? `Error: ${firstError}\n\n` : '') +
+      `Please find attached files or copied logs.`
+    );
+    window.open(`mailto:drozanes@gmail.com?subject=${mailSubject}&body=${mailBody}`, '_blank');
+  });
+}
+
+// 5. Download Bug Report Files
+downloadBugBtn.addEventListener('click', async () => {
   if (!recordedBugMediaBlob) return;
+  const t = getI18n();
   const ext = recordedBugMediaType === 'video' ? 'webm' : 'jpg';
-  const mediaFile = new File([recordedBugMediaBlob], `tefillin_mirror_bug.${ext}`);
-  const logFile = new File([generatedLogContent], 'tefillin_mirror_logs.txt', { type: 'text/plain' });
-  triggerDownload(mediaFile, `tefillin_mirror_bug.${ext}`);
-  triggerDownload(logFile, 'tefillin_mirror_logs.txt');
+  const mediaFilename = `tefillin_mirror_bug.${ext}`;
+  const logFilename = 'tefillin_mirror_logs.txt';
+
+  // Capacitor Native File Saving
+  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+    try {
+      const { Filesystem } = window.Capacitor.Plugins;
+      const mediaB64 = await blobToBase64(recordedBugMediaBlob);
+      await Filesystem.writeFile({
+        path: mediaFilename,
+        data: mediaB64,
+        directory: 'DOCUMENTS',
+        recursive: true
+      });
+      const logB64 = btoa(unescape(encodeURIComponent(generatedLogContent)));
+      await Filesystem.writeFile({
+        path: logFilename,
+        data: logB64,
+        directory: 'DOCUMENTS',
+        recursive: true
+      });
+      bugStatusMsg.innerText = t.downloadSuccess;
+      bugStatusMsg.style.display = 'block';
+      return;
+    } catch (fsErr) {
+      console.warn("Capacitor Filesystem download error:", fsErr);
+    }
+  }
+
+  // Web Browser Download
+  const mediaFile = new File([recordedBugMediaBlob], mediaFilename);
+  const logFile = new File([generatedLogContent], logFilename, { type: 'text/plain' });
+  triggerDownload(mediaFile, mediaFilename);
+  triggerDownload(logFile, logFilename);
 });
 
 function triggerDownload(blob, filename) {
@@ -385,9 +576,13 @@ const isLocalApp = (typeof window !== 'undefined' &&
 const faceMesh = new FaceMesh({
   locateFile: (file) => {
     if (isLocalApp) {
-      return `vendor/mediapipe/${file}`;
+      try {
+        return new URL(`vendor/mediapipe/${file}`, window.location.href).href;
+      } catch (_) {
+        return `vendor/mediapipe/${file}`;
+      }
     }
-    return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+    return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`;
   }
 });
 

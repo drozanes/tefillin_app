@@ -117,15 +117,34 @@
             <input type="text" id="bugNotesInput" placeholder="למשל: התפילין במקום הנכון אך זוהו כפסולות" style="width: 100%; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: var(--text-main); font-family: inherit; font-size: 0.85rem;">
           </div>
 
+          <div id="bugMediaPreviewContainer" style="display: none; margin-bottom: 12px; text-align: center; background: rgba(0,0,0,0.3); padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+            <div id="lblBugPreview" style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 6px;">תצוגה מקדימה של מה שהוקלט:</div>
+            <img id="bugPreviewImg" style="display: none; max-width: 100%; max-height: 180px; border-radius: 6px; border: 1px solid var(--border-color); object-fit: contain; margin: 0 auto;" />
+            <video id="bugPreviewVideo" controls playsinline style="display: none; max-width: 100%; max-height: 180px; border-radius: 6px; border: 1px solid var(--border-color); margin: 0 auto;"></video>
+          </div>
+
           <div id="bugStatusMsg" style="display: none; padding: 10px; border-radius: var(--radius-sm); background: rgba(34, 197, 94, 0.15); border: 1px solid var(--accent-green); color: var(--accent-green); font-size: 0.85rem; margin-bottom: 12px; text-align: center;"></div>
 
-          <div class="bug-export-actions" id="bugExportActions" style="display: none; display: flex; gap: 8px; flex-wrap: wrap;">
-            <button id="shareBugBtn" class="btn" style="flex: 1; background: var(--accent-green); color: #000; font-weight: bold; padding: 10px; display: flex; align-items: center; justify-content: center; gap: 6px;">
-              <span>📤</span> <span id="lblShareBug">שתף (WhatsApp / Gmail)</span>
+          <div class="bug-export-actions" id="bugExportActions" style="display: none; flex-direction: column; gap: 8px;">
+            <button id="shareBugBtn" class="btn" style="background: var(--accent-green); color: #000; font-weight: bold; padding: 11px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <span>📤</span> <span id="lblShareBug">שתף (WhatsApp / אפליקציות)</span>
             </button>
-            <button id="downloadBugBtn" class="btn btn-glass" style="flex: 1; padding: 10px; display: flex; align-items: center; justify-content: center; gap: 6px;">
-              <span>💾</span> <span id="lblDownloadBug">הורד קובץ</span>
-            </button>
+            <div style="display: flex; gap: 8px;">
+              <button id="whatsappBugBtn" class="btn" style="flex: 1; background: #22c55e; color: #fff; font-weight: bold; padding: 10px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <span>💬</span> <span id="lblWhatsappBug">WhatsApp</span>
+              </button>
+              <button id="copyLogsBugBtn" class="btn btn-glass" style="flex: 1; padding: 10px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <span>📋</span> <span id="lblCopyLogsBug">העתק לוגים</span>
+              </button>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button id="emailBugBtn" class="btn btn-glass" style="flex: 1; padding: 9px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <span>✉️</span> <span id="lblEmailBug">דוא"ל</span>
+              </button>
+              <button id="downloadBugBtn" class="btn btn-glass" style="flex: 1; padding: 9px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <span>💾</span> <span id="lblDownloadBug">הורד קובץ</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
